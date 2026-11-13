@@ -1,0 +1,38 @@
+name: gp_g3_37
+timeframe: M15
+filters:
+- op: or
+  args:
+  - in_london
+  - in_newyork
+entry_long:
+  op: and
+  args:
+  - op: cross_above
+    args:
+    - ema_20
+    - asian_low
+  - in_london
+entry_short: mirror
+exit:
+  stop:
+    atr_mult: 1.5
+    atr_n: 14
+  target:
+    r_mult: 2.0
+  time_exit_utc: '20:00'
+  max_bars: 64
+  exit_long: null
+  exit_short: null
+sizing:
+  type: risk_pct
+  lots: 0.1
+  risk_pct: 0.5
+  annual_vol: 0.1
+  max_lots: 2.0
+  min_lots: 0.01
+  equity: 10000
+params: {}
+params_space: {}
+rationale: ''
+family: gp

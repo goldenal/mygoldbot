@@ -27,3 +27,25 @@ def test_end_to_end_backtest_runs():
         res = backtest_spec(StrategySpec.from_yaml(f"strategies/{f}.yaml"), bars, CostModel(), cache_key=None)
         assert len(res.equity) > 0
         assert res.trades["pnl"].notna().all()
+
+
+def test_gp_operators_preserve_types():
+    import random
+    from goldsys.search.genetic import random_bool, crossover, mutate, _is_bool
+    rng = random.Random(3)
+
+    def well_typed(e):
+        if isinstance(e, dict):
+            op, args = e["op"], e["args"]
+            if op in ("and", "or", "not"):
+                return all(_is_bool(a) and well_typed(a) for a in args)
+            if op in ("gt", "lt", "ge", "le", "cross_above", "cross_below", "between"):
+                return all((not _is_bool(a)) and well_typed(a) for a in args)
+            return all(well_typed(a) for a in args)
+        return True
+
+    pop = [random_bool(rng) for _ in range(50)]
+    for _ in range(500):
+        c = mutate(crossover(rng.choice(pop), rng.choice(pop), rng), rng)
+        assert well_typed(c)
+        pop.append(c)

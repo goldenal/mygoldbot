@@ -80,8 +80,17 @@ def _set(expr, path, new):
     return e
 
 
+BOOL_OPS = {"gt", "lt", "ge", "le", "cross_above", "cross_below", "between", "and", "or", "not"}
+
+
+def _is_bool(node) -> bool:
+    if isinstance(node, dict):
+        return node.get("op") in BOOL_OPS
+    return isinstance(node, str) and node in BOOL_FEATURES
+
+
 def mutate(expr, rng: random.Random):
-    paths = [p for p, n in _nodes(expr)]
+    paths = [p for p, n in _nodes(expr) if _is_bool(n)]
     path = rng.choice(paths)
     node = _get(expr, path)
     r = rng.random()
@@ -101,8 +110,9 @@ def mutate(expr, rng: random.Random):
 
 
 def crossover(a, b, rng: random.Random):
-    pa = rng.choice([p for p, n in _nodes(a) if isinstance(n, (dict, str))])
-    pb = rng.choice([p for p, n in _nodes(b) if isinstance(n, (dict, str))])
+    """Type-aware subtree crossover: boolean subtrees only replace boolean subtrees."""
+    pa = rng.choice([p for p, n in _nodes(a) if _is_bool(n)])
+    pb = rng.choice([p for p, n in _nodes(b) if _is_bool(n)])
     return _set(a, pa, copy.deepcopy(_get(b, pb)))
 
 
@@ -153,6 +163,8 @@ def evolve(bars_m1: pd.DataFrame, cost: CostModel, generations: int = 10, pop_si
         return {"expr": expr, "score": score, "metrics": m, "folds": r.get("fold_sharpes", []), "spec": s}
 
     def add(ind):
+        if ind["metrics"].get("trades", 0) < 50 or ind["score"] <= -5.0:
+            return
         nz = niche_of(ind["metrics"])
         if nz not in elites or ind["score"] > elites[nz]["score"]:
             elites[nz] = ind

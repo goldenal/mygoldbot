@@ -1,0 +1,72 @@
+name: asian_breakout_t1
+timeframe: M15
+filters:
+- op: or
+  args:
+  - in_london
+  - in_newyork
+- op: lt
+  args:
+  - asian_width_pct_rank_60
+  - $width_pct
+entry_long:
+  op: and
+  args:
+  - op: cross_above
+    args:
+    - close
+    - op: +
+      args:
+      - asian_high
+      - op: '*'
+        args:
+        - atr_$atr_n
+        - $k
+entry_short: mirror
+exit:
+  stop:
+    atr_mult: $stop_atr
+    atr_n: $atr_n
+  target:
+    r_mult: $r_mult
+  time_exit_utc: '20:00'
+  max_bars: null
+  exit_long: null
+  exit_short: null
+sizing:
+  type: risk_pct
+  lots: 0.1
+  risk_pct: 0.5
+  annual_vol: 0.1
+  max_lots: 2.0
+  min_lots: 0.01
+  equity: 10000
+params:
+  width_pct: 60
+  atr_n: 14
+  k: 0.5
+  stop_atr: 2.0
+  r_mult: 2.5
+params_space:
+  width_pct:
+  - 20
+  - 80
+  - 10
+  k:
+  - 0.0
+  - 1.0
+  - 0.25
+  stop_atr:
+  - 0.5
+  - 2.0
+  - 0.25
+  r_mult:
+  - 1.0
+  - 3.0
+  - 0.5
+rationale: 'Gold compresses during the Asian session and expands when London and New
+  York open. Buy a break above the Asian range (plus an ATR buffer) when the range
+  was narrow, only during London/New York, flat before the US close.
+
+  '
+family: session_breakout
