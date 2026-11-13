@@ -1,0 +1,29 @@
+name: vol_momentum
+family: trend_following
+timeframe: H1
+rationale: >
+  Gold trends persist at hourly and daily horizons. Enter in the direction of the EMA
+  spread when ADX confirms a trend and price breaks the Donchian channel; trail with a
+  chandelier stop; size to a constant volatility target.
+filters:
+  - {op: gt, args: ["adx_14", "$adx_min"]}
+entry_long:
+  op: and
+  args:
+    - {op: gt, args: ["ema_$fast", "ema_$slow"]}
+    - {op: gt, args: [close, "donchian_high_$dc"]}
+entry_short: mirror
+exit:
+  stop: {atr_mult: "$stop_atr", atr_n: 14}
+  target: null
+  exit_long: {op: lt, args: ["ema_$fast", "ema_$slow"]}
+  exit_short: mirror
+  max_bars: 400
+sizing: {type: vol_target, annual_vol: 0.10, equity: 10000, max_lots: 2.0}
+params: {fast: 20, slow: 50, dc: 20, adx_min: 20, stop_atr: 3.0}
+params_space:
+  fast: [10, 30, 5]
+  slow: [40, 100, 10]
+  dc: [10, 40, 10]
+  adx_min: [15, 30, 5]
+  stop_atr: [2.0, 4.0, 0.5]

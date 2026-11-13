@@ -1,0 +1,30 @@
+name: vwap_reversion
+family: mean_reversion
+timeframe: M5
+rationale: >
+  Outside the London/New York opens, gold mean-reverts to the session VWAP at minute
+  horizons once spread is accounted for. Fade stretched moves in the Asian session only.
+filters:
+  - in_asia
+entry_long:
+  op: and
+  args:
+    - {op: lt, args: ["vwap_z_$z_n", {op: "-", args: [0, "$z"]}]}
+    - {op: lt, args: ["rsi_2", 10]}
+entry_short:
+  op: and
+  args:
+    - {op: gt, args: ["vwap_z_$z_n", "$z"]}
+    - {op: gt, args: ["rsi_2", 90]}
+exit:
+  stop: {atr_mult: "$stop_atr", atr_n: 14}
+  target: null
+  exit_long: {op: gt, args: ["vwap_z_$z_n", 0]}
+  exit_short: {op: lt, args: ["vwap_z_$z_n", 0]}
+  max_bars: 24
+sizing: {type: risk_pct, risk_pct: 0.4, equity: 10000, max_lots: 2.0}
+params: {z_n: 60, z: 2.0, stop_atr: 1.5}
+params_space:
+  z: [1.5, 3.0, 0.25]
+  stop_atr: [1.0, 2.5, 0.25]
+  z_n: [40, 120, 20]

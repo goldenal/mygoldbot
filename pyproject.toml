@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "goldsys"
+version = "0.1.0"
+description = "Gold (XAUUSD) trading research platform: data, DSL, backtester, validation gate, strategy formulation"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy>=1.26",
+  "pandas>=2.2",
+  "pyarrow>=15",
+  "numba>=0.59",
+  "pyyaml>=6",
+  "optuna>=3.6",
+  "requests>=2.31",
+]
+
+[project.optional-dependencies]
+llm = ["anthropic>=0.40"]
+nautilus = ["nautilus_trader>=1.200"]
+dev = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+include = ["goldsys*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
