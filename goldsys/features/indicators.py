@@ -5,6 +5,12 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+try:
+    from numba import njit
+except Exception:  # pragma: no cover
+    def njit(*a, **k):
+        return (lambda f: f) if not a or not callable(a[0]) else a[0]
+
 
 def sma(x: pd.Series, n: int) -> pd.Series:
     return x.rolling(n, min_periods=n).mean()
@@ -66,11 +72,29 @@ def realised_vol(close: pd.Series, n: int = 20) -> pd.Series:
     return r.rolling(n, min_periods=n).std(ddof=0)
 
 
+@njit(cache=True)
+def _pct_rank(a: np.ndarray, n: int) -> np.ndarray:
+    out = np.full(a.shape[0], np.nan)
+    bad = 0                                    # NaNs inside the current window
+    for i in range(a.shape[0]):
+        if np.isnan(a[i]):
+            bad += 1
+        if i >= n and np.isnan(a[i - n]):
+            bad -= 1
+        if i >= n - 1 and bad == 0:
+            cur, below = a[i], 0
+            for j in range(i - n + 1, i):
+                if a[j] < cur:
+                    below += 1
+            out[i] = below * 100.0 / (n - 1) if n > 1 else np.nan
+    return out
+
+
 def rolling_pct_rank(x: pd.Series, n: int) -> pd.Series:
-    """Percentile rank (0-100) of the current value within the previous n values (inclusive)."""
-    def _rank(w):
-        return (w[:-1] < w[-1]).mean() * 100.0
-    return x.rolling(n, min_periods=n).apply(_rank, raw=True)
+    """Percentile rank (0-100) of the current value among the n-1 values before it; NaN until a full
+    window of n valid values exists. (Compiled: the pandas rolling.apply version of this was the
+    single slowest step of every M5/M15 backtest.)"""
+    return pd.Series(_pct_rank(np.ascontiguousarray(x.to_numpy(dtype=np.float64)), int(n)), index=x.index)
 
 
 def session_vwap(close: pd.Series, volume: pd.Series, day_key: pd.Series) -> pd.Series:
@@ -91,3 +115,16 @@ def cross_above(a: pd.Series, b: pd.Series) -> pd.Series:
 
 def cross_below(a: pd.Series, b: pd.Series) -> pd.Series:
     return (a < b) & (a.shift(1) >= b.shift(1))
+
+
+def bollinger(close: pd.Series, n: int = 20, k: float = 2.0) -> pd.DataFrame:
+    """Bollinger bands: middle (SMA), upper and lower at k standard deviations (population sd, as bollinger_z)."""
+    m = close.rolling(n, min_periods=n).mean()
+    s = close.rolling(n, min_periods=n).std(ddof=0)
+    return pd.DataFrame({"mid": m, "upper": m + k * s, "lower": m - k * s}, index=close.index)
+
+
+def macd(close: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.DataFrame:
+    line = ema(close, fast) - ema(close, slow)
+    sig = ema(line, signal)
+    return pd.DataFrame({"macd": line, "signal": sig, "hist": line - sig}, index=close.index)

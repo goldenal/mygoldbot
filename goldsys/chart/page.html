@@ -1,0 +1,718 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>goldsys chart</title>
+<link rel="icon" href="data:,">
+<style>
+:root {
+  color-scheme: light;
+  --page: #f4f3f0; --surface: #fcfcfb; --line: #e3e1dc; --grid: #ebe9e4;
+  --text: #0b0b0b; --text-2: #52514e; --text-3: #7d7b76;
+  --series: #2a78d6; --good: #0ca30c; --critical: #d03b3b; --warning: #fab219;
+  --btn: #0b0b0b; --btn-text: #fcfcfb;
+  --asia: rgba(140,90,200,.10); --london: rgba(42,120,214,.10); --ny: rgba(236,131,90,.12); --overlap: rgba(12,163,12,.12);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --page: #121211; --surface: #1a1a19; --line: #2e2e2b; --grid: #262624;
+    --text: #f0efec; --text-2: #c3c2b7; --text-3: #8f8e86;
+    --series: #3987e5; --good: #2fbf4a; --critical: #e5584f;
+    --btn: #f0efec; --btn-text: #1a1a19;
+    --asia: rgba(170,120,230,.13); --london: rgba(57,135,229,.13); --ny: rgba(236,131,90,.14); --overlap: rgba(47,191,74,.14);
+  }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--page); color: var(--text); font: 13px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; display: flex; flex-direction: column; }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--surface); }
+h1 { font-size: 15px; margin: 0 8px 0 0; letter-spacing: -.01em; }
+.group { display: inline-flex; gap: 0; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.group button { border: 0; border-radius: 0; border-right: 1px solid var(--line); padding: 4px 9px; }
+.group button:last-child { border-right: 0; }
+.group button.on { background: var(--btn); color: var(--btn-text); }
+button, select, input { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 7px; padding: 4px 9px; }
+button { cursor: pointer; } button:hover, select:hover { border-color: var(--text-3); }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--series); outline-offset: 1px; }
+input[type=text] { width: 90px; } input[type=date] { width: 138px; }
+.spacer { flex: 1; }
+.muted { color: var(--text-3); }
+.banner { padding: 6px 16px; background: var(--surface); border-bottom: 1px solid var(--line); border-left: 4px solid var(--warning); color: var(--text-2); }
+.banner[hidden] { display: none; }
+.banner.err { border-left-color: var(--critical); }
+main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 320px; }
+#chartwrap { position: relative; min-width: 0; min-height: 420px; }
+#chart { position: absolute; inset: 0; }
+#legend { position: absolute; left: 10px; top: 8px; z-index: 5; pointer-events: none; font-variant-numeric: tabular-nums; max-width: calc(100% - 90px); }
+#legend .l1 { font-weight: 600; } #legend .l2 { color: var(--text-2); font-size: 12px; }
+#legend .up { color: var(--good); } #legend .dn { color: var(--critical); }
+#loading { position: absolute; right: 70px; top: 8px; z-index: 5; color: var(--text-3); font-size: 12px; }
+aside { border-left: 1px solid var(--line); background: var(--surface); overflow: auto; padding: 12px 14px; min-height: 0; }
+h2 { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text-2); margin: 14px 0 8px; }
+h2:first-child { margin-top: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 999px; padding: 1px 4px 1px 10px; }
+.chip button { border: 0; padding: 0 6px; background: none; color: var(--text-3); }
+.row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.kv { display: grid; grid-template-columns: auto auto; gap: 2px 14px; justify-content: start; font-variant-numeric: tabular-nums; }
+.kv span:nth-child(odd) { color: var(--text-3); }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th { text-align: left; font-size: 11px; font-weight: 500; color: var(--text-3); padding: 2px 6px 4px 0; border-bottom: 1px solid var(--line); }
+td { padding: 3px 6px 3px 0; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+tr.trade { cursor: pointer; } tr.trade:hover td { background: var(--page); } tr.trade.sel td { background: var(--page); font-weight: 600; }
+td.num, th.num { text-align: right; }
+.pos { color: var(--good); } .neg { color: var(--critical); }
+#tradebox { max-height: 46vh; overflow: auto; }
+#stratinfo { overflow-wrap: anywhere; }
+.card { border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; margin: 8px 0; background: var(--page); }
+.card.prop { border-color: var(--series); border-width: 2px; }
+.card .ttl { font-weight: 600; margin-bottom: 4px; }
+.long { color: var(--good); } .short { color: var(--critical); }
+button.primary { background: var(--btn); color: var(--btn-text); border-color: var(--btn); }
+button.take { background: var(--good); color: #fff; border-color: var(--good); } button.skip { background: var(--surface); }
+button.armed { background: var(--critical); color: #fff; border-color: var(--critical); }
+button:disabled { opacity: .45; cursor: default; }
+.rp-ctl { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.row select { flex: 1; min-width: 0; }
+.mini { font-size: 12px; } .mini td, .mini th { padding: 2px 5px 2px 0; }
+.chk { display: flex; gap: 6px; align-items: center; }
+#rp-report table { margin-top: 6px; }
+.pill { display: inline-block; border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; font-size: 11px; color: var(--text-2); }
+.attr { margin-top: 18px; font-size: 11px; color: var(--text-3); }
+.attr a { color: inherit; }
+@media (max-width: 900px) { main { grid-template-columns: 1fr; grid-template-rows: 60vh auto; } aside { border-left: 0; border-top: 1px solid var(--line); } }
+</style>
+</head>
+<body>
+<header>
+  <h1>goldsys chart</h1>
+  <select id="symbol" aria-label="Symbol"></select>
+  <div class="group" id="tfs" role="group" aria-label="Timeframe"></div>
+  <span class="row"><input type="date" id="goto" aria-label="Go to date (UTC)"><button id="gobtn">Go</button><button id="latest">Latest</button></span>
+  <span class="spacer"></span>
+  <span class="muted" id="status">loading…</span>
+</header>
+<div class="banner" id="banner" hidden></div>
+<main>
+  <div id="chartwrap">
+    <div id="legend"></div><div id="loading"></div>
+    <div id="chart"></div>
+  </div>
+  <aside>
+    <h2>Replay <span class="pill" id="rp-badge" hidden>session active</span></h2>
+    <div id="rp-setup">
+      <div class="muted" style="margin-bottom:6px">Walk through history bar by bar. The strategies propose trades; you take or skip each one and say why.</div>
+      <div class="row"><label>Start <input type="date" id="rp-start"></label><label class="chk"><input type="checkbox" id="rp-blind"> blind: hide the date</label></div>
+      <div id="rp-strats" style="margin:6px 0"></div>
+      <div class="row"><button class="primary" id="rp-new">Start replay</button></div>
+      <div class="row" style="margin-top:6px"><select id="rp-resume" aria-label="Resume a session"></select><button id="rp-load">Resume</button><button id="rp-rep-all">Report (all)</button></div>
+    </div>
+    <div id="rp-live" hidden>
+      <div id="rp-status"></div>
+      <div class="rp-ctl">
+        <button class="primary" id="rp-next" title="Run the clock until a strategy proposes a trade">Next signal ⏭</button>
+        <button id="rp-play">Play ▶</button><select id="rp-speed" aria-label="Playback speed"></select>
+        <button id="rp-1m">+1 min</button><button id="rp-bar" title="Advance to the close of the current chart bar">To bar close</button>
+      </div>
+      <div id="rp-upcoming"></div>
+      <div id="rp-props"></div>
+      <div id="rp-pos"></div>
+      <div id="rp-recent"></div>
+      <div class="rp-ctl"><button id="rp-report-btn">Report</button><button id="rp-finish" title="Reveal every outcome and close the session">Finish &amp; reveal</button><button id="rp-exit">Exit replay</button></div>
+    </div>
+    <div id="rp-report"></div>
+
+    <h2 id="h-ind">Indicators</h2>
+    <div class="row"><select id="indsel" aria-label="Indicator"></select><input type="text" id="indargs" aria-label="Indicator parameters"><button id="indadd">Add</button></div>
+    <div class="chips" id="indchips"></div>
+    <div class="row" style="margin-top:6px"><label class="chk"><input type="checkbox" id="showev" checked> high-impact news markers</label><span class="muted" id="evinfo"></span></div>
+
+    <div id="chartonly">
+    <h2>Strategy</h2>
+    <div class="row"><select id="strat" aria-label="Strategy"></select><button id="stratgo">Show trades</button></div>
+    <div class="row" style="margin-top:6px"><label><input type="checkbox" id="alllevels"> stop / target for every visible trade (max 60)</label></div>
+    <div id="stratinfo" class="muted" style="margin-top:8px"></div>
+    <div id="tradebox"></div>
+    </div>
+
+    <div class="attr">Times are UTC. Bars are BID. Charts by <a href="https://www.tradingview.com/" target="_blank" rel="noopener">TradingView Lightweight Charts™</a> (Apache-2.0), © TradingView, Inc.</div>
+  </aside>
+</main>
+<script src="/chart-static/lightweight-charts.standalone.production.js"></script>
+<script>
+"use strict";
+const TOKEN = "__TOKEN__";
+const LW = LightweightCharts;
+const $ = (id) => document.getElementById(id);
+const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const LIMIT = 1500;
+const PALETTE = ["#e8a317", "#2a78d6", "#a64dd6", "#16a085", "#d6457a", "#8a6d3b"];
+
+function el(tag, props, ...kids) {
+  const e = document.createElement(tag);
+  Object.assign(e, props || {});
+  for (const k of kids) e.append(k);
+  return e;
+}
+function store(k, v) { try { if (v === undefined) return JSON.parse(localStorage.getItem("gs." + k)); localStorage.setItem("gs." + k, JSON.stringify(v)); } catch (e) { return null; } }
+const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+function blind() { return !!(S.rp && S.rp.st && S.rp.st.blind); }
+function fmtT(t) {
+  const d = new Date(t * 1000);
+  return blind() ? DAYS[d.getUTCDay()] + " " + d.toISOString().slice(11, 16) : d.toISOString().slice(0, 16).replace("T", " ");
+}
+function fmtPx(x) { return x == null ? "–" : x.toFixed(2); }
+
+// ------------------------------------------------------------------ state
+const S = {
+  meta: null, symbol: null, tf: "M15",
+  t: [], o: [], h: [], l: [], c: [], spread: [], first: 0, last: 0, hasOlder: false, hasNewer: false, loading: false,
+  specs: [],                 // active indicator specs, e.g. "ema:50"
+  ind: {},                   // spec -> {pane,label,levels,series:[{name,type,v:[...]}]}   (v aligned with S.t)
+  trades: null, tradeInfo: null, sel: null,
+  rp: null,                  // replay: {id, st, playing, timer, speed}
+  events: [],                // news events inside the loaded window: {t, name, tier}
+};
+let chart, candle, markersPlugin, indSeries = [], levelSeries = [], uiTimer = null, gen = 0;
+
+function tfSec() { return S.meta.tf_seconds[S.tf]; }
+function snap(t) { const s = tfSec(); return t - (t % s); }
+
+// ------------------------------------------------------------------ chart
+function chartColors() {
+  return { layout: { background: { type: "solid", color: css("--surface") }, textColor: css("--text-2"), panes: { separatorColor: css("--line") } },
+           grid: { vertLines: { color: css("--grid") }, horzLines: { color: css("--grid") } },
+           rightPriceScale: { borderColor: css("--line") }, timeScale: { borderColor: css("--line") } };
+}
+function initChart() {
+  chart = LW.createChart($("chart"), { autoSize: true, ...chartColors(),
+    timeScale: { timeVisible: true, secondsVisible: false, rightOffset: 6, barSpacing: 7,
+      tickMarkFormatter: (time, type) => {            // in blind mode show weekday and time only, never a date
+        if (!blind()) return null;
+        const d = new Date(time * 1000);
+        return type <= 1 ? "" : type === 2 ? DAYS[d.getUTCDay()] : d.toISOString().slice(11, 16);
+      } },
+    localization: { timeFormatter: (time) => fmtT(time) },
+    crosshair: { mode: LW.CrosshairMode.Normal } });
+  candle = chart.addSeries(LW.CandlestickSeries, { upColor: css("--good"), downColor: css("--critical"), borderVisible: false, wickUpColor: css("--good"), wickDownColor: css("--critical"), priceLineVisible: false });
+  markersPlugin = LW.createSeriesMarkers(candle, []);
+  chart.timeScale().subscribeVisibleLogicalRangeChange(onRange);
+  chart.subscribeCrosshairMove(onCross);
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => setTimeout(applyTheme, 50));
+}
+function applyTheme() {
+  chart.applyOptions(chartColors());
+  candle.applyOptions({ upColor: css("--good"), downColor: css("--critical"), wickUpColor: css("--good"), wickDownColor: css("--critical") });
+  rebuildInd(); drawMarkers(); drawLevels();
+}
+function setCandles() {
+  candle.setData(S.t.map((t, i) => ({ time: t, open: S.o[i], high: S.h[i], low: S.l[i], close: S.c[i] })));
+}
+
+// ------------------------------------------------------------------ data loading
+async function api(path) {
+  const r = await fetch(path, { cache: "no-store" });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+function barsUrl(extra) { if (S.rp) return `/api/replay/bars?session=${S.rp.id}&tf=${S.tf}&limit=${LIMIT}&ind=${encodeURIComponent(S.specs.join(","))}` + extra; return `/api/chart/bars?symbol=${encodeURIComponent(S.symbol)}&tf=${S.tf}&limit=${LIMIT}&ind=${encodeURIComponent(S.specs.join(","))}` + extra; }
+function showErr(msg) { const b = $("banner"); b.hidden = !msg; b.className = "banner err"; b.textContent = msg || ""; }
+function busy(on) { S.loading = on; $("loading").textContent = on ? "loading…" : ""; }
+
+function adopt(d, mode) {            // mode: "replace" | "older" | "newer"
+  const pick = (a, b) => mode === "older" ? b.concat(a) : mode === "newer" ? a.concat(b) : b;
+  for (const k of ["t", "o", "h", "l", "c", "spread"]) S[k] = pick(S[k], d[k]);
+  const next = {};
+  for (const ind of d.indicators) {
+    const old = S.ind[ind.id];
+    next[ind.id] = { ...ind, series: ind.series.map((s, i) => ({ ...s, v: mode === "replace" || !old ? s.v : pick(old.series[i].v, s.v) })) };
+  }
+  S.ind = next;
+  S.first = d.first; S.last = d.last;
+  if (mode !== "newer") S.hasOlder = d.has_more;
+  if (mode !== "older") S.hasNewer = d.has_newer;
+  if (mode === "replace") { S.hasOlder = d.has_more; S.hasNewer = d.has_newer; }
+}
+async function loadWindow(end, focus) {
+  const my = ++gen; busy(true); showErr("");
+  try {
+    const d = await api(barsUrl(end ? `&end=${end}` : ""));
+    if (my !== gen) return;
+    adopt(d, "replace"); setCandles(); refreshInd(); drawMarkers(); drawLevels(); updateStatus(); loadEvents();
+    if (focus) chart.timeScale().setVisibleRange({ from: Math.max(S.t[0], focus.from), to: Math.min(S.t[S.t.length - 1] + tfSec() * 5, focus.to) });
+    if (!focus) { const n = S.t.length; chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - 160), to: n + 6 }); }
+  } catch (e) { showErr(e.message); }
+  if (my === gen) busy(false);
+}
+async function page(dir) {
+  if (S.loading) return;
+  const my = gen; busy(true);
+  const keep = chart.timeScale().getVisibleRange();
+  try {
+    const d = await api(barsUrl(dir === "older" ? `&end=${S.t[0] - 1}` : `&after=${S.t[S.t.length - 1]}`));
+    if (my !== gen) return;
+    adopt(d, dir); setCandles(); refreshInd(); drawMarkers(); updateStatus(); loadEvents();
+    if (keep) chart.timeScale().setVisibleRange(keep);
+  } catch (e) { showErr(e.message); }
+  if (my === gen) busy(false);
+}
+function onRange(r) {
+  if (!r || !S.t.length) return;
+  if (r.from < 40 && S.hasOlder && !S.loading) page("older");
+  else if (r.to > S.t.length - 40 && S.hasNewer && !S.loading) page("newer");
+  clearTimeout(uiTimer); uiTimer = setTimeout(renderTrades, 150);
+}
+function updateStatus() {
+  if (S.rp) { const st = S.rp.st; $("status").textContent = `REPLAY ${st.symbol} ${S.tf} · clock ${fmtT(st.t)}${st.blind ? "" : " UTC"} · ${S.t.length.toLocaleString()} bars loaded`; }
+  else $("status").textContent = `${S.symbol} ${S.tf} · ${S.t.length.toLocaleString()} bars loaded · data ${fmtT(S.first)} → ${fmtT(S.last)} UTC`;
+  const syn = /_SYN$/.test(S.symbol);
+  if (S.rp) { const b = $("banner"); b.hidden = !syn; b.className = "banner"; if (syn) b.textContent = "Synthetic data: no edge by construction."; return; }
+  const b = $("banner"); b.hidden = !syn; b.className = "banner";
+  if (syn) b.textContent = "Synthetic data: this price series was generated and has no edge by construction. Download real ticks (scripts/download_data.py) before judging anything.";
+}
+
+// ------------------------------------------------------------------ indicators
+function clearInd() { for (const s of indSeries) { try { chart.removeSeries(s.ser); } catch (e) {} } indSeries = []; }
+function rebuildInd() {
+  clearInd();
+  let pane = 0;
+  S.specs.forEach((spec, k) => {
+    const d = S.ind[spec]; if (!d) return;
+    const p = d.pane ? ++pane : 0;
+    d.series.forEach((s, j) => {
+      let ser;
+      const color = d.series.length === 3 && d.label.startsWith("Bollinger") ? (j === 1 ? css("--text-3") : "#2a78d6") : PALETTE[(k + j) % PALETTE.length];
+      if (s.type === "bands") {
+        ser = chart.addSeries(LW.HistogramSeries, { priceScaleId: "", lastValueVisible: false, priceLineVisible: false }, p);
+        ser.priceScale().applyOptions({ scaleMargins: { top: 0, bottom: 0 } });
+      } else if (s.type === "hist") {
+        ser = chart.addSeries(LW.HistogramSeries, { lastValueVisible: false, priceLineVisible: false }, p);
+      } else {
+        ser = chart.addSeries(LW.LineSeries, { color, lineWidth: d.label.startsWith("Bollinger") && j !== 1 ? 1 : 2, priceLineVisible: false, lastValueVisible: !!d.pane, crosshairMarkerVisible: false }, p);
+      }
+      if (d.levels && j === 0) for (const lv of d.levels) ser.createPriceLine({ price: lv, color: css("--text-3"), lineStyle: LW.LineStyle.Dashed, lineWidth: 1, axisLabelVisible: false });
+      indSeries.push({ ser, spec, j, type: s.type });
+    });
+  });
+  refreshInd();
+}
+const BAND = { 1: "--asia", 2: "--london", 3: "--ny", 4: "--overlap" };
+function refreshInd() {
+  if (indSeries.length !== S.specs.reduce((n, s) => n + (S.ind[s] ? S.ind[s].series.length : 0), 0)) return rebuildInd();
+  for (const x of indSeries) {
+    const s = S.ind[x.spec].series[x.j], data = [];
+    for (let i = 0; i < S.t.length; i++) {
+      const v = s.v[i]; if (v == null) continue;
+      if (x.type === "bands") data.push({ time: S.t[i], value: 1, color: css(BAND[v]) });
+      else if (x.type === "hist") data.push({ time: S.t[i], value: v, color: v >= 0 ? css("--good") : css("--critical") });
+      else data.push({ time: S.t[i], value: v });
+    }
+    x.ser.setData(data);
+  }
+  renderChips();
+}
+function renderChips() {
+  const box = $("indchips"); box.replaceChildren();
+  S.specs.forEach((spec) => {
+    const d = S.ind[spec];
+    box.append(el("span", { className: "chip" }, d ? d.label : spec, el("button", { title: "Remove", textContent: "×", onclick: () => removeInd(spec) })));
+  });
+}
+async function addInd(spec) {
+  if (S.specs.includes(spec)) return;
+  S.specs.push(spec); store("specs", S.specs);
+  if (S.rp) { await loadWindow(null, null); rpDraw(); return; }
+  await loadWindow(S.t.length ? S.t[S.t.length - 1] : null, S.t.length ? chart.timeScale().getVisibleRange() : null);
+}
+function removeInd(spec) { S.specs = S.specs.filter((s) => s !== spec); delete S.ind[spec]; store("specs", S.specs); rebuildInd(); }
+
+// ------------------------------------------------------------------ legend
+function onCross(p) {
+  const lg = $("legend");
+  const d = p.time && p.seriesData.get(candle);
+  const i = d ? S.t.indexOf(p.time) : S.t.length - 1;     // indexOf is fine for one hover event
+  if (i < 0) return;
+  const o = S.o[i], c = S.c[i], up = c >= o;
+  lg.replaceChildren(
+    el("div", { className: "l1" }, `${S.symbol} · ${S.tf} · ${fmtT(S.t[i])} UTC`),
+    el("div", { className: "l2 " + (up ? "up" : "dn") }, `O ${o.toFixed(2)}  H ${S.h[i].toFixed(2)}  L ${S.l[i].toFixed(2)}  C ${c.toFixed(2)}  (${(c - o >= 0 ? "+" : "") + (c - o).toFixed(2)})   spread ${S.spread[i] == null ? "–" : S.spread[i].toFixed(2)}`),
+    ...S.specs.filter((s) => S.ind[s] && S.ind[s].series.some((x) => x.type !== "bands")).map((s) => {
+      const d2 = S.ind[s];
+      const vals = d2.series.filter((x) => x.type !== "bands").map((x) => (x.v[i] == null ? "–" : x.v[i].toFixed(2)));
+      return el("div", { className: "l2" }, `${d2.label}: ${vals.join(" / ")}`);
+    }));
+}
+
+// ------------------------------------------------------------------ strategy trades
+async function showStrategy() {
+  const path = $("strat").value; if (!path) return;
+  busy(true); showErr("");
+  try {
+    const d = await api(`/api/chart/trades?symbol=${encodeURIComponent(S.symbol)}&strategy=${encodeURIComponent(path)}`);
+    S.trades = d.trades; S.tradeInfo = d; S.sel = null; store("strat", path);
+    for (const sp of d.suggested) if (!S.specs.includes(sp)) S.specs.push(sp);
+    store("specs", S.specs);
+    const m = d.metrics || {};
+    const info = $("stratinfo"); info.replaceChildren(el("div", {}, `${d.name} · ${d.timeframe} · ${JSON.stringify(d.params)}`),
+      el("div", { className: "kv" }, ...["trades", "net_profit", "sharpe", "max_drawdown", "profit_factor", "win_rate"].filter((k) => k in m).flatMap((k) => [el("span", {}, k), el("span", {}, typeof m[k] === "number" ? m[k].toLocaleString(undefined, { maximumFractionDigits: 3 }) : String(m[k]))])));
+    if (d.trades.length) { const last = d.trades[d.trades.length - 1]; await loadWindow(last.exit_t + tfSec() * 60, { from: last.entry_t - tfSec() * 80, to: last.exit_t + tfSec() * 40 }); }
+    renderTrades(); drawMarkers();
+  } catch (e) { showErr(e.message); }
+  busy(false);
+}
+function visibleTrades() {
+  if (!S.trades || !S.t.length) return [];
+  const r = chart.timeScale().getVisibleRange();
+  if (!r) return [];
+  return S.trades.filter((t) => t.exit_t >= r.from && t.entry_t <= r.to);
+}
+function renderTrades() {
+  const box = $("tradebox"); box.replaceChildren();
+  if (!S.trades) return;
+  const vis = visibleTrades(), shown = vis.slice(0, 200);
+  box.append(el("h2", {}, `Trades in view: ${vis.length}` + (vis.length > 200 ? " (first 200)" : "")));
+  const tb = el("tbody"), tab = el("table", {}, el("thead", {}, el("tr", {}, ...["#", "side", "entry (UTC)", "R", "P&L", "exit"].map((h, i) => el("th", { className: i === 3 || i === 4 ? "num" : "" }, h)))), tb);
+  for (const t of shown) {
+    const tr = el("tr", { className: "trade" + (S.sel === t.id ? " sel" : ""), onclick: () => selectTrade(t) },
+      el("td", {}, String(t.id + 1)), el("td", { className: t.dir > 0 ? "pos" : "neg" }, t.dir > 0 ? "long" : "short"), el("td", {}, fmtT(t.entry_t)),
+      el("td", { className: "num " + (t.pnl >= 0 ? "pos" : "neg") }, t.r == null ? "–" : t.r.toFixed(2)), el("td", { className: "num " + (t.pnl >= 0 ? "pos" : "neg") }, t.pnl.toFixed(0)), el("td", {}, t.reason));
+    tb.append(tr);
+  }
+  box.append(tab);
+  if ($("alllevels").checked) drawLevels();
+}
+async function selectTrade(t) {
+  S.sel = t.id;
+  const pad = tfSec() * 60;
+  if (!S.t.length || t.entry_t - pad < S.t[0] || t.exit_t + pad > S.t[S.t.length - 1])
+    await loadWindow(t.exit_t + pad * 2, { from: t.entry_t - pad, to: t.exit_t + pad });
+  else chart.timeScale().setVisibleRange({ from: t.entry_t - pad, to: t.exit_t + pad });
+  drawLevels(); renderTrades();
+}
+const EVSHORT = { "US Non-Farm Payrolls": "NFP", "US CPI": "CPI", "FOMC Statement": "FOMC", "FOMC Minutes": "Minutes", "US PPI": "PPI", "US PCE": "PCE", "US GDP": "GDP", "US Retail Sales": "Retail", "US JOLTS": "JOLTS" };
+async function loadEvents() {
+  S.events = []; $("evinfo").textContent = "";
+  if (!S.t.length || !$("showev").checked) return drawMarkers();
+  try {
+    const q = S.rp ? `/api/replay/events?session=${S.rp.id}&start=${S.t[0]}&end=${S.t[S.t.length - 1] + tfSec()}&tier=2` : `/api/chart/events?start=${S.t[0]}&end=${S.t[S.t.length - 1] + tfSec()}&tier=2`;
+    const d = await api(q);
+    S.events = d.events || [];
+    if (d.loaded === false || (S.rp && !S.rp.st.calendar)) $("evinfo").textContent = "no calendar loaded";
+  } catch (e) { S.events = []; }
+  drawMarkers();
+}
+function drawMarkers() {
+  const lo = S.t.length ? S.t[0] : 0, hi = S.t.length ? S.t[S.t.length - 1] : 0, mk = [];
+  if (S.t.length && $("showev").checked) for (const e of S.events) if (e.t >= lo && e.t <= hi + tfSec()) mk.push({ time: snap(e.t), position: "aboveBar", shape: "square", color: css("--warning"), text: EVSHORT[e.name] || e.name, size: e.tier === 1 ? 1 : 0 });
+  if (!S.trades || !S.t.length) { mk.sort((a, b) => a.time - b.time); markersPlugin.setMarkers(mk); return; }
+  for (const t of S.trades) {
+    if (t.entry_t >= lo && t.entry_t <= hi) mk.push({ time: snap(t.entry_t), position: t.dir > 0 ? "belowBar" : "aboveBar", shape: t.dir > 0 ? "arrowUp" : "arrowDown", color: t.dir > 0 ? css("--good") : css("--critical"), size: S.sel === t.id ? 2 : 1 });
+    if (t.exit_t >= lo && t.exit_t <= hi) mk.push({ time: snap(t.exit_t), position: "inBar", shape: "circle", color: t.pnl >= 0 ? css("--good") : css("--critical"), text: t.r == null ? "" : (t.r >= 0 ? "+" : "") + t.r.toFixed(1) + "R" });
+  }
+  mk.sort((a, b) => a.time - b.time);
+  markersPlugin.setMarkers(mk);
+}
+function clearLevels() { for (const s of levelSeries) { try { chart.removeSeries(s); } catch (e) {} } levelSeries = []; }
+function drawLevels() {
+  clearLevels();
+  if (!S.trades || !S.t.length) return;
+  let list = [];
+  if ($("alllevels").checked) list = visibleTrades().slice(0, 60);
+  if (S.sel != null && !list.some((t) => t.id === S.sel)) list.push(S.trades[S.sel]);
+  const seg = (a, b, price, color, style) => {
+    if (price == null) return;
+    const s = chart.addSeries(LW.LineSeries, { color, lineWidth: 1, lineStyle: style, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+    s.setData([{ time: a, value: price }, { time: b, value: price }]); levelSeries.push(s);
+  };
+  for (const t of list) {
+    const a = snap(t.entry_t); let b = snap(t.exit_t); if (b <= a) b = a + tfSec();
+    seg(a, b, t.entry_px, css("--text-2"), LW.LineStyle.Solid);
+    seg(a, b, t.stop_px, css("--critical"), LW.LineStyle.Dashed);
+    seg(a, b, t.tgt_px, css("--good"), LW.LineStyle.Dashed);
+  }
+  drawMarkers();
+}
+
+// ------------------------------------------------------------------ toolbar
+function buildToolbar() {
+  const m = S.meta;
+  $("symbol").replaceChildren(...m.symbols.map((s) => el("option", { value: s, textContent: s })));
+  $("symbol").value = S.symbol;
+  $("tfs").replaceChildren(...m.timeframes.map((tf) => el("button", { textContent: tf, className: tf === S.tf ? "on" : "", onclick: () => setTf(tf) })));
+  $("indsel").replaceChildren(...m.indicators.map((i) => el("option", { value: i.id, textContent: i.label })));
+  const sync = () => { const i = m.indicators.find((x) => x.id === $("indsel").value); $("indargs").value = ""; $("indargs").placeholder = i.defaults.join(", ") || "no parameters"; $("indargs").disabled = !i.defaults.length; };
+  $("indsel").onchange = sync; sync();
+  $("indadd").onclick = () => {
+    const id = $("indsel").value, args = $("indargs").value.split(/[ ,:]+/).filter(Boolean);
+    addInd([id, ...args].join(":"));
+  };
+  $("strat").replaceChildren(el("option", { value: "", textContent: "choose…" }), ...m.strategies.map((s) => el("option", { value: s.path, textContent: `${s.name} (${s.timeframe})` })));
+  const sv = store("strat"); if (sv && m.strategies.some((s) => s.path === sv)) $("strat").value = sv;
+  $("stratgo").onclick = showStrategy;
+  $("alllevels").onchange = drawLevels;
+  $("showev").onchange = loadEvents;
+  $("symbol").onchange = () => { S.symbol = $("symbol").value; store("symbol", S.symbol); S.trades = null; S.tradeInfo = null; S.sel = null; $("stratinfo").replaceChildren(); $("tradebox").replaceChildren(); loadWindow(null); };
+  $("gobtn").onclick = () => { const v = $("goto").value; if (!v) return; const end = Math.floor(Date.parse(v + "T23:59:59Z") / 1000); loadWindow(end); };
+  $("latest").onclick = () => loadWindow(null);
+}
+function setTf(tf) {
+  if (S.rp) { S.tf = tf; store("tf", tf); for (const b of $("tfs").children) b.className = b.textContent === tf ? "on" : ""; return loadWindow(null, null).then(rpDraw); }
+  const mid = S.t.length ? chart.timeScale().getVisibleRange() : null;
+  S.tf = tf; store("tf", tf);
+  for (const b of $("tfs").children) b.className = b.textContent === tf ? "on" : "";
+  const center = mid ? Math.floor((mid.from + mid.to) / 2) : null;
+  loadWindow(center ? center + tfSec() * 100 : null, center ? { from: center - tfSec() * 80, to: center + tfSec() * 80 } : null);
+}
+
+
+// ------------------------------------------------------------------ replay (hybrid: the strategies propose, you decide)
+let rpLines = [];
+const SPEEDS = [{ label: "1 min / s", n: 1, ms: 1000 }, { label: "5 min / s", n: 1, ms: 200 }, { label: "15 min / s", n: 3, ms: 200 }, { label: "1 h / s", n: 12, ms: 200 }, { label: "4 h / s", n: 48, ms: 200 }];
+const usd = (n) => (n < 0 ? "−$" : "$") + Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const isoDate = (t) => new Date(t * 1000).toISOString().slice(0, 10);
+
+async function post(path, body) {
+  const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json", "X-Goldsys-Token": TOKEN }, body: JSON.stringify(body) });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+async function rpInit() {
+  try {
+    const d = await api("/api/replay/sessions");
+    S.rpMeta = d;
+    const box = $("rp-strats"); box.replaceChildren();
+    d.strategies.forEach((st, i) => box.append(el("label", { className: "chk" }, el("input", { type: "checkbox", value: st.path, checked: /vol_momentum/.test(st.path) }), `${st.name} (${st.timeframe})`)));
+    rpFillResume(d.sessions);
+    $("rp-start").value = isoDate(Math.max(S.first + 40 * 86400, S.last - 180 * 86400));
+  } catch (e) { $("rp-setup").hidden = true; }
+}
+function rpFillResume(list) {
+  $("rp-resume").replaceChildren(...(list.length ? list : [{ id: "", created: "none yet" }]).map((x) =>
+    el("option", { value: x.id, textContent: x.id ? `${x.created.slice(0, 10)} · ${x.symbol} · ${x.decisions} decisions${x.finished ? " · finished" : ""}${x.blind ? " · blind" : ""}` : "no saved sessions" })));
+}
+async function rpEnter(st) {
+  S.rp = { id: st.id, st, playing: false, speed: SPEEDS[1], timer: null, busy: false, armed: false };
+  S.symbol = st.symbol; $("symbol").value = st.symbol; S.trades = null; S.sel = null; showErr("");
+  $("rp-setup").hidden = true; $("rp-live").hidden = false; $("chartonly").hidden = true; $("rp-badge").hidden = false;
+  S.tf = "M15"; store("tf", "M15"); for (const b of $("tfs").children) b.className = b.textContent === "M15" ? "on" : "";      // strategies here trade M15/H1: start where the signals are
+  for (const id of ["symbol", "gobtn", "latest", "goto"]) $(id).disabled = true;
+  $("rp-speed").replaceChildren(...SPEEDS.map((x, i) => el("option", { value: String(i), textContent: x.label, selected: i === 1 })));
+  await loadWindow(null, null);
+  rpRender(st);
+}
+function rpExit() {
+  rpPause(); S.rp = null; S.trades = null; clearRpLines(); markersPlugin.setMarkers([]);
+  $("rp-setup").hidden = false; $("rp-live").hidden = true; $("chartonly").hidden = false; $("rp-badge").hidden = true; $("rp-report").replaceChildren();
+  for (const id of ["symbol", "gobtn", "latest", "goto"]) $(id).disabled = false;
+  api("/api/replay/sessions").then((d) => rpFillResume(d.sessions)).catch(() => {});
+  loadWindow(null);
+}
+function clearRpLines() { for (const l of rpLines) { try { candle.removePriceLine(l); } catch (e) {} } rpLines = []; }
+function rpLine(price, color, style, title) {
+  if (price == null) return;
+  rpLines.push(candle.createPriceLine({ price, color, lineStyle: style, lineWidth: 1, axisLabelVisible: true, title }));
+}
+const edits = {};          // per proposal id: what you typed in the stop / target / size boxes (drives the ghost lines)
+function rpDraw() {
+  if (!S.rp) return;
+  clearRpLines();
+  const st = S.rp.st;
+  for (const p of st.pending) {
+    const e = edits[p.id] || {};
+    const stop = e.stop != null && !isNaN(e.stop) ? e.stop : p.stop_est, tgt = e.noTarget ? null : (e.tgt != null && !isNaN(e.tgt) ? e.tgt : p.target_est);
+    rpLine(p.entry_est, css("--text-2"), LW.LineStyle.Solid, `${p.kind === "reverse" ? "REVERSE " : ""}${p.dir > 0 ? "BUY" : "SELL"} ~entry`);
+    rpLine(stop, css("--critical"), LW.LineStyle.Dashed, "stop"); rpLine(tgt, css("--good"), LW.LineStyle.Dashed, "target");
+  }
+  for (const o of st.open) {
+    rpLine(o.entry_px, css("--series"), LW.LineStyle.Solid, `${o.dir > 0 ? "long" : "short"} ${o.name}`);
+    rpLine(o.stop_px, css("--critical"), LW.LineStyle.Dashed, o.trailing ? "trail stop" : "stop"); rpLine(o.tgt_px, css("--good"), LW.LineStyle.Dashed, "target");
+  }
+  S.trades = [...st.closed, ...st.open].map((t, k) => ({ id: k, dir: t.dir, entry_t: t.entry_t, exit_t: t.exit_t == null ? null : t.exit_t, pnl: t.pnl == null ? 0 : t.pnl, r: t.r == null ? null : t.r }));
+  drawMarkers();
+}
+const dur = (m) => { m = Math.abs(Math.round(m)); return m < 120 ? `${m} min` : m < 2880 ? `${Math.round(m / 60)} h` : `${Math.round(m / 1440)} days`; };
+const newsText = (n) => !n ? "" : (n.minutes >= 0 ? `Next high-impact event: ${n.name} in ${dur(n.minutes)}` : `Last high-impact event: ${n.name} ${dur(n.minutes)} ago`);
+function numInput(value, placeholder, onchange) {
+  const i = el("input", { type: "number", step: "0.01", value: value == null ? "" : String(value), placeholder, style: "width:100%" });
+  i.oninput = () => onchange(i.value === "" ? null : parseFloat(i.value));
+  return i;
+}
+function proposalCard(p, st) {
+  edits[p.id] = edits[p.id] || {};
+  const E = edits[p.id];
+  const take = el("select", { "aria-label": "Why take it" }, ...st.tags.take.map((t) => el("option", { value: t.id, textContent: t.label })));
+  const skip = el("select", { "aria-label": "Why skip it" }, ...st.tags.skip.map((t) => el("option", { value: t.id, textContent: t.label })));
+  const note = el("input", { type: "text", placeholder: "note (optional)", style: "width:100%;margin-top:6px" });
+  const risk = el("span", {}, "");
+  const refresh = () => {
+    const stop = E.stop != null && !isNaN(E.stop) ? E.stop : p.stop_est, lots = E.lots != null && !isNaN(E.lots) ? E.lots : p.lots;
+    risk.textContent = `${lots} lots · risk ≈ ${usd(Math.abs(p.entry_est - stop) * lots * 100)}` + (E.tgt != null && !E.noTarget ? ` · R:R ${(Math.abs(E.tgt - p.entry_est) / Math.max(1e-9, Math.abs(p.entry_est - stop))).toFixed(2)}` : "");
+    rpDraw();
+  };
+  const stopIn = numInput(null, `${p.stop_est.toFixed(2)} (strategy)`, (v) => { E.stop = v; refresh(); });
+  const tgtIn = numInput(null, p.target_est == null ? "none (strategy)" : `${p.target_est.toFixed(2)} (strategy)`, (v) => { E.tgt = v; refresh(); });
+  const lotIn = numInput(null, `${p.lots} (strategy)`, (v) => { E.lots = v; refresh(); });
+  const noT = el("input", { type: "checkbox" }); noT.onchange = () => { E.noTarget = noT.checked; refresh(); };
+  const go = async (decision, tag) => {
+    const body = { session: S.rp.id, proposal: p.id, decision, tag, note: note.value };
+    if (decision === "take") {
+      if (E.stop != null && !isNaN(E.stop)) body.stop_px = E.stop;
+      if (E.noTarget) body.clear_target = true; else if (E.tgt != null && !isNaN(E.tgt)) body.tgt_px = E.tgt;
+      if (E.lots != null && !isNaN(E.lots)) body.lots = E.lots;
+    }
+    try { delete edits[p.id]; rpRender(await post("/api/replay/decide", body)); } catch (e) { showErr(e.message); edits[p.id] = E; }
+  };
+  const head = p.kind === "reverse"
+    ? el("div", { className: "ttl " + (p.dir > 0 ? "long" : "short") }, `REVERSE → ${p.dir > 0 ? "BUY" : "SELL"} · ${p.name} (${p.tf})`)
+    : el("div", { className: "ttl " + (p.dir > 0 ? "long" : "short") }, `${p.dir > 0 ? "BUY" : "SELL"} · ${p.name} (${p.tf})`);
+  const kids = [head];
+  if (p.reverses) kids.push(el("div", { className: "muted" }, `Closes your ${p.reverses.dir > 0 ? "long" : "short"} (${p.reverses.lots} lots, open ${usd(p.reverses.unrealised)}) at the next open, then enters the other way.`));
+  if (p.news) kids.push(el("div", { className: Math.abs(p.news.minutes) <= 60 ? "neg" : "muted" }, (Math.abs(p.news.minutes) <= 60 ? "⚠ " : "") + newsText(p.news)));
+  kids.push(el("div", { className: "kv" },
+    el("span", {}, "entry ≈"), el("span", {}, `${p.entry_est.toFixed(2)} (fills at the next bar's open)`),
+    el("span", {}, "stop"), el("span", {}, `${p.stop_est.toFixed(2)}  (−${p.stop_dist.toFixed(2)})`),
+    el("span", {}, "target"), el("span", {}, p.target_est == null ? "none (exits on signal)" : `${p.target_est.toFixed(2)}  (+${p.target_dist.toFixed(2)}, R:R ${p.rr})`),
+    el("span", {}, "trailing"), el("span", {}, p.trail_dist == null ? "no" : `stop follows ${p.trail_dist.toFixed(2)} behind the best price`),
+    el("span", {}, "size / risk"), el("span", {}, `${p.lots} lots · risk ${usd(p.risk_usd)}`), el("span", {}, "spread"), el("span", {}, p.spread.toFixed(2))));
+  kids.push(el("details", {}, el("summary", {}, "Use your own stop, target or size"),
+    el("div", { className: "kv", style: "margin-top:6px;gap:6px 10px" }, el("span", {}, "stop"), stopIn, el("span", {}, "target"), tgtIn, el("span", {}, "no target"), noT, el("span", {}, `size (≤ ${p.max_lots})`), lotIn),
+    el("div", { className: "muted mini" }, `Levels must be at least ${p.min_gap} from the entry. The strategy's own levels are always simulated too, so the report can tell what your edits changed.`), risk));
+  kids.push(el("div", { className: "row", style: "margin-top:8px" }, take, el("button", { className: "take", textContent: p.kind === "reverse" ? "Reverse" : "Take", onclick: () => go("take", take.value) })),
+    el("div", { className: "row", style: "margin-top:6px" }, skip, el("button", { className: "skip", textContent: "Skip", onclick: () => go("skip", skip.value) })), note);
+  return el("div", { className: "card prop" }, ...kids);
+}
+function positionCard(o, st) {
+  const stopIn = numInput(o.stop_px, "stop", () => {}), tgtIn = numInput(o.tgt_px, "no target", () => {});
+  const act = async (body) => { try { rpRender(await post("/api/replay/manage", { session: S.rp.id, trade: o.id, ...body })); } catch (e) { showErr(e.message); } };
+  const badges = [o.trailing ? "trailing stop" : "", o.modified ? "edited" : "", o.closing ? "closing at next open" : "", o.kind === "reverse" ? "reversal" : ""].filter(Boolean).join(" · ");
+  return el("div", { className: "card" },
+    el("div", { className: "ttl " + (o.dir > 0 ? "long" : "short") }, `${o.dir > 0 ? "LONG" : "SHORT"} ${o.name} · ${o.lots} lots @ ${o.entry_px.toFixed(2)}`),
+    el("div", { className: o.unrealised >= 0 ? "pos" : "neg" }, `open ${usd(o.unrealised)}` + (badges ? ` · ${badges}` : "")),
+    el("div", { className: "kv", style: "margin-top:6px;gap:6px 10px" }, el("span", {}, "stop"), stopIn, el("span", {}, "target"), tgtIn),
+    el("div", { className: "row", style: "margin-top:6px" },
+      el("button", { textContent: "Move", title: "Change the stop and/or target from the next bar. A new stop switches any trailing rule off.", onclick: () => {
+        const b = {}; const sv = parseFloat(stopIn.value), tv = parseFloat(tgtIn.value);
+        if (!isNaN(sv) && Math.abs(sv - o.stop_px) > 1e-9) b.stop_px = sv;
+        if (stopIn.value !== "" && tgtIn.value === "" && o.tgt_px != null) b.clear_target = true; else if (!isNaN(tv) && (o.tgt_px == null || Math.abs(tv - o.tgt_px) > 1e-9)) b.tgt_px = tv;
+        if (tgtIn.value === "" && o.tgt_px != null) b.clear_target = true;
+        if (!Object.keys(b).length) { showErr("nothing changed"); return; } act(b);
+      } }),
+      el("button", { className: "skip", textContent: "Close at next open", onclick: () => act({ close: true }) })));
+}
+function rpRender(st) {
+  S.rp.st = st;
+  const live = !st.finished;
+  $("rp-status").replaceChildren(
+    el("div", { className: "ttl" }, `Clock ${fmtT(st.t)}${st.blind ? " (date hidden)" : " UTC"}`),
+    el("div", { className: "muted" }, `Price ${st.price.toFixed(2)} · spread ${st.spread.toFixed(2)} · equity ${usd(st.equity)} (realised ${usd(st.realised)}) · decisions: ${st.decisions.take} taken, ${st.decisions.skip} skipped`),
+    st.finished ? el("div", { className: "muted" }, "Finished: every outcome is revealed in the report.") : st.at_end ? el("div", { className: "muted" }, "End of data.") : "");
+  for (const id of ["rp-next", "rp-play", "rp-1m", "rp-bar"]) $(id).disabled = !live || st.status === "awaiting" || st.at_end;
+  $("rp-finish").disabled = !live || st.status === "awaiting";
+  const up = $("rp-upcoming"); up.replaceChildren();
+  if (st.calendar) {
+    if (st.upcoming.length) up.append(el("div", { className: "muted mini" }, "Next 24h: " + st.upcoming.slice(0, 4).map((e) => `${EVSHORT[e.name] || e.name} in ${e.in_min < 120 ? e.in_min + " min" : Math.round(e.in_min / 60) + " h"}`).join(" · ")));
+  } else up.append(el("div", { className: "muted mini" }, "No news calendar loaded (scripts/import_calendar.py)."));
+  const props = $("rp-props"); props.replaceChildren(...st.pending.map((p) => proposalCard(p, st)));
+  const pos = $("rp-pos"); pos.replaceChildren();
+  if (st.open.length) pos.append(el("h2", {}, "Open trades"), ...st.open.map((o) => positionCard(o, st)));
+  if (st.queued.length || st.closed.length) {
+    const rows = [];
+    for (const q of st.queued) rows.push(el("tr", {}, el("td", {}, q.name), el("td", { className: q.dir > 0 ? "long" : "short" }, q.dir > 0 ? "long" : "short"), el("td", { colSpan: 3 }, "queued: fills at the next bar")));
+    for (const c of st.closed.slice(0, 6)) rows.push(el("tr", {}, el("td", {}, c.name), el("td", { className: c.dir > 0 ? "long" : "short" }, c.dir > 0 ? "long" : "short"), el("td", {}, c.reason), el("td", { className: c.pnl >= 0 ? "pos" : "neg" }, usd(c.pnl)), el("td", {}, c.r == null ? "" : c.r.toFixed(2) + "R")));
+    pos.append(el("h2", {}, `Closed (${st.closed_n})`), el("table", { className: "mini" }, el("tbody", {}, ...rows)));
+  }
+  const rec = $("rp-recent"); rec.replaceChildren();
+  if (st.recent.length) rec.append(el("h2", {}, "Your last decisions"), el("table", { className: "mini" }, el("tbody", {}, ...st.recent.slice(0, 6).map((r) =>
+    el("tr", {}, el("td", {}, fmtT(r.t)), el("td", {}, r.name + (r.kind === "reverse" ? " (rev)" : "")), el("td", { className: r.decision === "take" ? "pos" : "muted" }, r.decision + (r.edited ? "*" : "")), el("td", {}, r.tag))))));
+  updateStatus(); rpDraw();
+}
+async function rpTail() {
+  const d = await api(`/api/replay/bars?session=${S.rp.id}&tf=${S.tf}&limit=12&ind=${encodeURIComponent(S.specs.join(","))}`);
+  if (!S.t.length || d.t[0] > S.t[S.t.length - 1] + tfSec() || S.specs.some((x) => !S.ind[x])) return loadWindow(null, null);
+  let k = S.t.findIndex((x) => x >= d.t[0]); if (k < 0) k = S.t.length;
+  for (const key of ["t", "o", "h", "l", "c", "spread"]) S[key] = S[key].slice(0, k).concat(d[key]);
+  for (const ind of d.indicators) { const old = S.ind[ind.id]; ind.series.forEach((s, i) => { old.series[i].v = old.series[i].v.slice(0, k).concat(s.v); }); }
+  S.last = d.last; setCandles(); refreshInd(); drawMarkers(); updateStatus();
+  S.rp.tick = (S.rp.tick || 0) + 1; if (S.rp.tick % 8 === 0) loadEvents();
+}
+async function rpStep(body, full) {
+  if (!S.rp || S.rp.busy) return;
+  S.rp.busy = true;
+  try {
+    const st = await post("/api/replay/step", { session: S.rp.id, ...body });
+    S.rp.st = st;
+    if (full || st.status === "awaiting") await loadWindow(null, null); else await rpTail();
+    rpRender(st);
+    if (st.status === "awaiting" || st.at_end) rpPause();
+  } catch (e) { showErr(e.message); rpPause(); }
+  if (S.rp) S.rp.busy = false;
+}
+function rpPlay() {
+  if (!S.rp || S.rp.playing || S.rp.st.status === "awaiting" || S.rp.st.at_end || S.rp.st.finished) return;
+  const sp = S.rp.speed; S.rp.playing = true; $("rp-play").textContent = "Pause ⏸";
+  S.rp.timer = setInterval(() => rpStep({ n: sp.n }, false), sp.ms);
+}
+function rpPause() { if (!S.rp) return; clearInterval(S.rp.timer); S.rp.playing = false; $("rp-play").textContent = "Play ▶"; }
+
+async function rpReport(all) {
+  const box = $("rp-report"); box.replaceChildren(el("div", { className: "muted" }, "loading…"));
+  try {
+    const d = await api("/api/replay/report" + (all || !S.rp ? "" : `?session=${S.rp.id}`));
+    const kids = [el("h2", {}, "Report"), el("div", { className: "muted" }, `${d.sessions} session(s) · ${d.decisions} decisions · ${d.resolved} counted · ${d.unresolved} not yet resolved by the clock`)];
+    for (const w of d.warnings || []) kids.push(el("div", { className: "card" }, w));
+    if (d.all_signals) {
+      const f = (x) => x.n ? `${x.n} · mean ${x.mean_r}R · total ${x.total_r}R · win ${Math.round(100 * x.win_rate)}%` : "none";
+      kids.push(el("table", { className: "mini" }, el("tbody", {}, el("tr", {}, el("td", {}, "every signal"), el("td", {}, f(d.all_signals))), el("tr", {}, el("td", {}, "you took"), el("td", {}, f(d.taken))), el("tr", {}, el("td", {}, "you skipped"), el("td", {}, f(d.skipped))))));
+      if (d.edge) kids.push(el("div", {}, `Taken minus skipped: ${d.edge.taken_minus_skipped_r}R per trade (95% interval ${d.edge.ci95[0]} to ${d.edge.ci95[1]})`));
+      const rows = Object.entries(d.by_tag).map(([k, v]) => el("tr", {}, el("td", {}, k), el("td", {}, String(v.n)), el("td", {}, v.mean_r == null ? "" : v.mean_r + "R"), el("td", {}, v.interpretable ? "" : "too few")));
+      kids.push(el("h2", {}, "By reason"), el("table", { className: "mini" }, el("thead", {}, el("tr", {}, ...["reason", "n", "mean", ""].map((h) => el("th", {}, h)))), el("tbody", {}, ...rows)));
+      kids.push(el("div", { className: "muted", style: "margin-top:6px" }, "A skip reason with a negative mean saved you money; a positive one cost you."));
+      if (d.by_kind && d.by_kind.reverse) { const g = d.by_kind; kids.push(el("h2", {}, "Entries vs reversals"), el("table", { className: "mini" }, el("tbody", {}, ...Object.entries(g).flatMap(([k, v]) => ["all", "taken", "skipped"].map((n) => el("tr", {}, el("td", {}, k), el("td", {}, n), el("td", {}, f(v[n])))))))); }
+      if (d.management) kids.push(el("h2", {}, "Your levels, size and management"), el("div", {}, `${d.management.n} edited trades: ${usd(d.management.total_usd)} in total (${usd(d.management.mean_usd)} per trade) versus the strategy's own levels; ${d.management.better} better, ${d.management.worse} worse.${d.management.interpretable ? "" : " Too few to interpret."}`));
+      if (d.by_news) { const n = d.by_news; kids.push(el("h2", {}, "Near high-impact news (±60 min)"), el("table", { className: "mini" }, el("tbody", {}, ...["within_60min_of_tier1", "otherwise"].flatMap((k) => ["all", "taken", "skipped"].map((g) => el("tr", {}, el("td", {}, k === "otherwise" ? "otherwise" : "near news"), el("td", {}, g), el("td", {}, f(n[k][g])))))))); }
+    }
+    box.replaceChildren(...kids);
+  } catch (e) { box.replaceChildren(el("div", { className: "card" }, e.message)); }
+}
+function bindReplay() {
+  $("rp-new").onclick = async () => {
+    const strategies = [...document.querySelectorAll("#rp-strats input:checked")].map((x) => x.value);
+    try { await rpEnter(await post("/api/replay/new", { symbol: S.symbol, strategies, start: $("rp-start").value, blind: $("rp-blind").checked })); } catch (e) { showErr(e.message); }
+  };
+  $("rp-load").onclick = async () => { const id = $("rp-resume").value; if (!id) return; try { await rpEnter(await api(`/api/replay/state?session=${id}`)); } catch (e) { showErr(e.message); } };
+  $("rp-next").onclick = () => rpStep({ to_signal: true }, true);
+  $("rp-1m").onclick = () => rpStep({ n: 1 }, false);
+  $("rp-bar").onclick = () => rpStep({ to_tf_close: S.tf }, false);
+  $("rp-play").onclick = () => (S.rp.playing ? rpPause() : rpPlay());
+  $("rp-speed").onchange = () => { S.rp.speed = SPEEDS[+$("rp-speed").value]; if (S.rp.playing) { rpPause(); rpPlay(); } };
+  $("rp-report-btn").onclick = () => rpReport(false);
+  $("rp-rep-all").onclick = () => rpReport(true);
+  $("rp-exit").onclick = rpExit;
+  $("rp-finish").onclick = async () => {
+    const b = $("rp-finish");
+    if (!S.rp.armed) { S.rp.armed = true; b.textContent = "Really finish?"; b.className = "armed"; setTimeout(() => { if (S.rp) { S.rp.armed = false; b.textContent = "Finish & reveal"; b.className = ""; } }, 4000); return; }
+    try { rpPause(); rpRender(await post("/api/replay/finish", { session: S.rp.id })); b.textContent = "Finish & reveal"; b.className = ""; rpReport(false); } catch (e) { showErr(e.message); }
+  };
+}
+
+(async function main() {
+  try {
+    S.meta = await api("/api/chart/meta");
+    if (!S.meta.symbols.length) { showErr("No bar data found. Run scripts/download_data.py or scripts/make_synthetic.py first."); $("status").textContent = "no data"; return; }
+    const sym = store("symbol");
+    S.symbol = S.meta.symbols.includes(sym) ? sym : (S.meta.symbols.find((s) => !/_SYN$/.test(s)) || S.meta.symbols[0]);
+    const tf = store("tf"); if (tf && S.meta.timeframes.includes(tf)) S.tf = tf;
+    const sp = store("specs"); S.specs = Array.isArray(sp) ? sp.filter((x) => typeof x === "string").slice(0, 8) : ["ema:50"];
+    buildToolbar(); initChart();
+    await loadWindow(null);
+    bindReplay(); rpInit();
+    if (S.specs.some((s) => !S.ind[s])) { S.specs = S.specs.filter((s) => S.ind[s]); }
+  } catch (e) { showErr(e.message); }
+})();
+</script>
+</body>
+</html>

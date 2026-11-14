@@ -46,6 +46,8 @@ if HAVE_NAUTILUS:
         def __init__(self, config: DSLStrategyConfig):
             super().__init__(config)
             self.spec = StrategySpec.from_dict(config.spec)
+            if self.spec.exit.trail:
+                raise NotImplementedError("trailing stops are not implemented in the Nautilus adapter (brackets are fixed at entry)")
             self.instrument_id = InstrumentId.from_str(config.instrument_id)
             self.bar_type = BarType.from_str(config.bar_type)
             self.rows: list[dict] = []

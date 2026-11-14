@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>goldsys operations</title>
+<link rel="icon" href="data:,">
+<style>
+:root {
+  color-scheme: light;
+  --page: #f4f3f0; --surface: #fcfcfb; --line: #e3e1dc; --grid: #ebe9e4;
+  --text: #0b0b0b; --text-2: #52514e; --text-3: #7d7b76;
+  --series: #2a78d6; --series-wash: rgba(42,120,214,.10);
+  --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
+  --btn: #0b0b0b; --btn-text: #fcfcfb;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --page: #121211; --surface: #1a1a19; --line: #2e2e2b; --grid: #262624;
+    --text: #f0efec; --text-2: #c3c2b7; --text-3: #8f8e86;
+    --series: #3987e5; --series-wash: rgba(57,135,229,.14);
+    --btn: #f0efec; --btn-text: #1a1a19;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--text); font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1180px; margin: 0 auto; padding: 20px 16px 56px; }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 16px; }
+h1 { font-size: 18px; margin: 0; letter-spacing: -.01em; }
+h2 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text-2); margin: 0 0 10px; }
+.meta { color: var(--text-3); font-size: 12px; }
+.spacer { flex: 1; }
+.chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; font-size: 12px; color: var(--text-2); background: var(--surface); white-space: nowrap; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); flex: none; }
+.s-good .dot { background: var(--good); } .s-warning .dot { background: var(--warning); } .s-serious .dot { background: var(--serious); } .s-critical .dot { background: var(--critical); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
+.banner { border-left: 4px solid var(--critical); }
+.banner.warn { border-left-color: var(--warning); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 14px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; min-width: 0; }
+.tile .k { font-size: 12px; color: var(--text-2); }
+.tile .v { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile.hero .v { font-size: 30px; }
+.tile .sub { font-size: 12px; color: var(--text-3); }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th { text-align: left; font-size: 12px; font-weight: 500; color: var(--text-3); padding: 4px 10px 6px 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 6px 10px 6px 0; border-bottom: 1px solid var(--grid); white-space: nowrap; vertical-align: middle; }
+tr:last-child td { border-bottom: 0; }
+td.num, th.num { text-align: right; }
+td.wrap { white-space: normal; min-width: 220px; }
+.muted { color: var(--text-3); }
+.empty { color: var(--text-3); padding: 6px 0; }
+button, select { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 7px; padding: 4px 10px; cursor: pointer; }
+button:hover, select:hover { border-color: var(--text-3); }
+button.primary { background: var(--btn); color: var(--btn-text); border-color: var(--btn); }
+button.danger { border-color: var(--critical); }
+button.armed { background: var(--critical); color: #fff; border-color: var(--critical); }
+button:focus-visible, select:focus-visible { outline: 2px solid var(--series); outline-offset: 2px; }
+.row-actions { display: flex; gap: 6px; }
+.chart { position: relative; }
+svg { display: block; width: 100%; height: 260px; }
+.axis text { fill: var(--text-3); font-size: 11px; font-variant-numeric: tabular-nums; }
+.gridline { stroke: var(--grid); stroke-width: 1; }
+.baseline { stroke: var(--line); stroke-width: 1; }
+.series-line { fill: none; stroke: var(--series); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.series-area { fill: var(--series-wash); }
+.cross { stroke: var(--text-3); stroke-width: 1; }
+.cross-dot { fill: var(--series); stroke: var(--surface); stroke-width: 2; }
+.tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; box-shadow: 0 4px 14px rgba(0,0,0,.12); font-size: 12px; white-space: nowrap; }
+.tip b { display: block; font-size: 14px; font-variant-numeric: tabular-nums; }
+details summary { cursor: pointer; color: var(--text-2); font-size: 12px; margin-top: 8px; }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 14px; }
+.two > .card { margin-bottom: 0; min-width: 0; }
+.stale { opacity: .55; }
+@media (max-width: 520px) { .two { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main id="app">
+  <header>
+    <h1>goldsys operations</h1>
+    <span class="chip" id="stage">stage</span>
+    <span class="chip" id="killchip"><span class="dot"></span><span>kill switch</span></span>
+    <span class="chip" id="riskchip"><span class="dot"></span><span>risk-off</span></span>
+    <span class="spacer"></span>
+    <span class="meta" id="asof"></span>
+    <span id="controls" class="row-actions"></span>
+  </header>
+  <div id="banner"></div>
+  <section class="tiles" id="tiles"></section>
+  <section class="card" id="pendingCard" hidden><h2>Awaiting your approval</h2><div class="scroll" id="pending"></div></section>
+  <section class="card">
+    <h2>Account equity</h2>
+    <div class="chart" id="chart"><svg id="svg" role="img" aria-label="Account equity over time"></svg><div class="tip" id="tip" hidden></div></div>
+    <details><summary>Show the data as a table</summary><div class="scroll" id="eqtable"></div></details>
+  </section>
+  <section class="card"><h2>Strategies</h2><div class="scroll" id="strategies"></div></section>
+  <section class="card"><h2>Open positions</h2><div class="scroll" id="positions"></div></section>
+  <div class="two">
+    <section class="card"><h2>Recent trades</h2><div class="scroll" id="trades"></div></section>
+    <section class="card"><h2>Recent signals</h2><div class="scroll" id="intents"></div></section>
+  </div>
+  <section class="card" style="margin-top:14px"><h2>Events</h2><div class="scroll" id="events"></div></section>
+</main>
+<script>
+"use strict";
+const TOKEN = "__TOKEN__", DB = "__DB__";
+const $ = id => document.getElementById(id);
+const NS = "http://www.w3.org/2000/svg";
+function el(tag, props, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props || {})) {
+    if (k === "class") e.className = v; else if (k.startsWith("on")) e.addEventListener(k.slice(2), v); else if (v !== null && v !== undefined && v !== false) e.setAttribute(k, v);
+  }
+  for (const k of kids.flat()) if (k !== null && k !== undefined) e.append(k.nodeType ? k : document.createTextNode(String(k)));
+  return e;
+}
+function svg(tag, attrs) { const e = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs || {})) e.setAttribute(k, v); return e; }
+const money = (v, sign) => v === null || v === undefined ? "n/a" : (sign && v > 0 ? "+" : "") + v.toLocaleString("en-US", {minimumFractionDigits: 0, maximumFractionDigits: 0});
+const px = v => v === null || v === undefined ? "" : Number(v).toFixed(2);
+const pct = v => v === null || v === undefined ? "n/a" : (v * 100).toFixed(2) + "%";
+const rr = v => v === null || v === undefined ? "n/a" : (v > 0 ? "+" : "") + v.toFixed(3) + "R";
+const when = s => s ? String(s).replace("T", " ").slice(0, 16) : "";
+const side = d => d === 1 ? "Buy" : "Sell";
+function status(level, label) { return el("span", {class: "chip s-" + level}, el("span", {class: "dot"}), label); }
+function table(cols, rows, empty) {
+  if (!rows.length) return el("div", {class: "empty"}, empty);
+  return el("table", {}, el("thead", {}, el("tr", {}, cols.map(c => el("th", {class: c.num ? "num" : ""}, c.h)))),
+    el("tbody", {}, rows.map(r => el("tr", {}, cols.map(c => el("td", {class: (c.num ? "num " : "") + (c.wrap ? "wrap" : "")}, c.f(r)))))));
+}
+async function act(body) {
+  const r = await fetch("/api/action", {method: "POST", headers: {"Content-Type": "application/json", "X-Goldsys-Token": TOKEN}, body: JSON.stringify(body)});
+  if (!r.ok) console.error("action failed", await r.text());
+  refresh();
+}
+function armed(label, confirmLabel, cls, fn) {           // two-step button: first click arms it for 4 seconds
+  let t = null;
+  const b = el("button", {class: cls, type: "button"}, label);
+  b.addEventListener("click", () => {
+    if (t) { clearTimeout(t); t = null; b.className = cls; b.textContent = label; fn(); return; }
+    b.className = cls + " armed"; b.textContent = confirmLabel;
+    t = setTimeout(() => { t = null; b.className = cls; b.textContent = label; }, 4000);
+  });
+  return b;
+}
+
+let curve = [], lastKey = "";
+function drawChart() {
+  const s = $("svg"), W = Math.max(320, $("chart").clientWidth), H = 260, m = {l: 62, r: 14, t: 10, b: 26};
+  s.setAttribute("viewBox", `0 0 ${W} ${H}`); s.replaceChildren();
+  if (curve.length < 2) { const t = svg("text", {x: W / 2, y: H / 2, "text-anchor": "middle", class: "axis"}); t.textContent = "No equity history yet"; t.style.fill = "var(--text-3)"; s.append(t); return; }
+  const xs = curve.map(p => Date.parse(p[0])), ys = curve.map(p => p[1]);
+  let lo = Math.min(...ys), hi = Math.max(...ys); const pad = (hi - lo || Math.abs(hi) * .01 || 1) * .08; lo -= pad; hi += pad;
+  const X = t => m.l + (t - xs[0]) / (xs[xs.length - 1] - xs[0] || 1) * (W - m.l - m.r), Y = v => m.t + (hi - v) / (hi - lo) * (H - m.t - m.b);
+  const step = niceStep((hi - lo) / 4), g = svg("g", {class: "axis"});
+  for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) {
+    g.append(svg("line", {class: "gridline", x1: m.l, x2: W - m.r, y1: Y(v), y2: Y(v)}));
+    const t = svg("text", {x: m.l - 8, y: Y(v) + 4, "text-anchor": "end"}); t.textContent = v.toLocaleString("en-US"); g.append(t);
+  }
+  const span = xs[xs.length - 1] - xs[0], n = Math.max(2, Math.min(6, Math.floor((W - m.l - m.r) / 130)));
+  for (let i = 0; i < n; i++) {
+    const tt = xs[0] + span * i / (n - 1), d = new Date(tt);
+    const t = svg("text", {x: X(tt), y: H - 8, "text-anchor": i === 0 ? "start" : i === n - 1 ? "end" : "middle"});
+    t.textContent = span > 3 * 864e5 ? d.toISOString().slice(0, 10) : d.toISOString().slice(5, 16).replace("T", " "); g.append(t);
+  }
+  g.append(svg("line", {class: "baseline", x1: m.l, x2: W - m.r, y1: H - m.b, y2: H - m.b}));
+  s.append(g);
+  const d = xs.map((t, i) => (i ? "L" : "M") + X(t).toFixed(1) + " " + Y(ys[i]).toFixed(1)).join("");
+  s.append(svg("path", {class: "series-area", d: d + `L${X(xs[xs.length - 1]).toFixed(1)} ${H - m.b}L${m.l} ${H - m.b}Z`}));
+  s.append(svg("path", {class: "series-line", d}));
+  const cross = svg("line", {class: "cross", y1: m.t, y2: H - m.b, visibility: "hidden"}), dot = svg("circle", {class: "cross-dot", r: 4.5, visibility: "hidden"});
+  const hit = svg("rect", {x: m.l, y: m.t, width: W - m.l - m.r, height: H - m.t - m.b, fill: "transparent", tabindex: 0, "aria-label": "Equity chart. Use left and right arrow keys to read values."});
+  s.append(cross, dot, hit);
+  const tip = $("tip"); let idx = xs.length - 1;
+  function show(i) {
+    idx = Math.max(0, Math.min(xs.length - 1, i));
+    const cx = X(xs[idx]), cy = Y(ys[idx]);
+    cross.setAttribute("x1", cx); cross.setAttribute("x2", cx); cross.setAttribute("visibility", "visible");
+    dot.setAttribute("cx", cx); dot.setAttribute("cy", cy); dot.setAttribute("visibility", "visible");
+    tip.replaceChildren(el("b", {}, money(ys[idx])), when(curve[idx][0]) + " UTC"); tip.hidden = false;
+    const k = $("chart").clientWidth / W, left = cx * k + 12;
+    tip.style.left = (left + tip.offsetWidth > $("chart").clientWidth ? cx * k - tip.offsetWidth - 12 : left) + "px"; tip.style.top = Math.max(0, cy * k - 44) + "px";
+  }
+  function hide() { cross.setAttribute("visibility", "hidden"); dot.setAttribute("visibility", "hidden"); tip.hidden = true; }
+  hit.addEventListener("pointermove", ev => {
+    const r = s.getBoundingClientRect(), t = xs[0] + ((ev.clientX - r.left) / r.width * W - m.l) / (W - m.l - m.r) * span;
+    let b = 0; for (let i = 1; i < xs.length; i++) if (Math.abs(xs[i] - t) < Math.abs(xs[b] - t)) b = i; show(b);
+  });
+  hit.addEventListener("pointerleave", hide); hit.addEventListener("blur", hide); hit.addEventListener("focus", () => show(idx));
+  hit.addEventListener("keydown", ev => { if (ev.key === "ArrowLeft") { show(idx - 1); ev.preventDefault(); } if (ev.key === "ArrowRight") { show(idx + 1); ev.preventDefault(); } });
+}
+function niceStep(raw) { const p = Math.pow(10, Math.floor(Math.log10(raw || 1))), f = raw / p; return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * p; }
+
+function render(st) {
+  const ro = st.read_only || !TOKEN, a = st.account, k = st.kill || {}, ro2 = st.risk_off || {};
+  $("stage").textContent = "stage: " + (st.stage || "n/a") + (st.scale !== null && st.scale !== undefined ? " · size ×" + st.scale : "") + " · " + (st.db || DB);
+  $("killchip").className = "chip s-" + (k.active ? "critical" : "good"); $("killchip").lastChild.textContent = k.active ? "Kill switch ACTIVE" : "Kill switch off";
+  $("riskchip").className = "chip s-" + (ro2.active ? "warning" : "good"); $("riskchip").lastChild.textContent = ro2.active ? "Risk-off ON" : "Risk-off off";
+  $("asof").textContent = a ? "as of " + when(a.ts) + " UTC" : "no data yet";
+  const c = $("controls"), ck = String(!!k.active) + String(!!ro2.active) + ro;
+  if (!ro && c.dataset.key !== ck) {            // rebuild only on a state change, so an armed button is not reset by the refresh
+    c.dataset.key = ck; c.replaceChildren();
+    c.append(ro2.active ? el("button", {type: "button", onclick: () => act({action: "risk_on"})}, "End risk-off") : el("button", {type: "button", onclick: () => act({action: "risk_off", reason: "dashboard"})}, "Go risk-off"));
+    c.append(k.active ? armed("Reset kill switch", "Confirm reset", "", () => act({action: "reset_kill"})) : armed("Kill switch", "Confirm: flatten and stop", "danger", () => act({action: "kill", reason: "dashboard"})));
+  }
+  const b = $("banner"); b.replaceChildren();
+  if (k.active) b.append(el("div", {class: "card banner"}, el("b", {}, "Kill switch active. "), "No new entries; open positions are closed on the runner's next step. Reason: " + (k.reason || "n/a") + (k.ts ? " (" + when(k.ts) + " UTC)" : "")));
+  if (ro2.active) b.append(el("div", {class: "card banner warn"}, el("b", {}, "Manual risk-off. "), "New entries are blocked; open positions keep their stops." + (ro2.reason ? " Reason: " + ro2.reason : "")));
+  const rs = st.risk_state || {};
+  if (rs.day_blocked || rs.week_blocked) b.append(el("div", {class: "card banner warn"}, el("b", {}, (rs.week_blocked ? "Weekly" : "Daily") + " loss limit reached. "), "Entries are blocked until the next " + (rs.week_blocked ? "week" : "rollover") + "."));
+  const tiles = $("tiles"); tiles.replaceChildren();
+  const tile = (key, val, sub, hero) => tiles.append(el("div", {class: "tile" + (hero ? " hero" : "")}, el("div", {class: "k"}, key), el("div", {class: "v"}, val), el("div", {class: "sub"}, sub || " ")));
+  if (a) {
+    tile("Equity", money(a.equity), "balance " + money(a.balance), true);
+    tile("Today", money(a.day_pnl, true), "since the last rollover");
+    tile("This week", money(a.week_pnl, true), "since the Sunday open");
+    tile("From peak", pct(a.drawdown), "high-water mark " + money(rs.hwm));
+    tile("Open size", a.open_lots.toFixed(2) + " lots", st.positions.length + " position" + (st.positions.length === 1 ? "" : "s"));
+  }
+  tile("Closed trades", String(st.totals.trades), st.totals.win_rate === null ? "" : "win rate " + (st.totals.win_rate * 100).toFixed(0) + "% · net " + money(st.totals.pnl, true));
+  $("pendingCard").hidden = !st.pending.length;
+  $("pending").replaceChildren(table([
+    {h: "#", f: r => r.id}, {h: "Signal time (UTC)", f: r => when(r.ts)}, {h: "Strategy", f: r => r.strategy}, {h: "Side", f: r => side(r.dir)},
+    {h: "Lots", num: 1, f: r => r.lots.toFixed(2)}, {h: "Ref. price", num: 1, f: r => px(r.ref_px)}, {h: "Stop distance", num: 1, f: r => px(r.stop_dist)},
+    {h: "Expires (UTC)", f: r => when(r.expires_ts)},
+    {h: "", f: r => ro ? "" : el("span", {class: "row-actions"}, el("button", {class: "primary", type: "button", onclick: () => act({action: "approve", id: r.id})}, "Approve"), el("button", {type: "button", onclick: () => act({action: "veto", id: r.id})}, "Veto"))}
+  ], st.pending, ""));
+  const key = JSON.stringify(st.equity_curve.slice(-1)) + st.equity_curve.length;
+  curve = st.equity_curve; if (key !== lastKey) { lastKey = key; drawChart(); }
+  $("eqtable").replaceChildren(table([{h: "Time (UTC)", f: r => when(r[0])}, {h: "Equity", num: 1, f: r => money(r[1])}], curve.slice(-60).reverse(), "No equity history yet"));
+  const driftCell = s => { const d = s.drift || {};
+    if (d.state === "breach") return status("critical", "Breach: " + rr(d.mean_r) + " < floor " + rr(d.p05_r));
+    if (d.state === "ok") return status("good", "OK: " + rr(d.mean_r) + " vs floor " + rr(d.p05_r));
+    if (d.state === "warming_up") return status("warning", "Warming up: " + d.n + " of " + d.window + " trades");
+    return el("span", {class: "muted"}, "no reference"); };
+  if (!(document.activeElement && document.activeElement.tagName === "SELECT")) $("strategies").replaceChildren(table([
+    {h: "Strategy", f: s => s.name},
+    {h: "Mode", f: s => ro ? s.mode : el("select", {"aria-label": "Mode for " + s.name, onchange: ev => act({action: "mode", strategy: s.name, mode: ev.target.value})}, ["auto", "approve", "off"].map(m => el("option", {value: m, selected: m === s.mode}, m)))},
+    {h: "Set by", f: s => el("span", {class: "muted"}, s.mode_by || "portfolio")},
+    {h: "Weight", num: 1, f: s => s.weight === null ? "" : s.weight.toFixed(2)}, {h: "Gate", f: s => s.validated === null ? "" : s.validated ? "passed" : "not passed"},
+    {h: "Trades", num: 1, f: s => s.trades}, {h: "Net P&L", num: 1, f: s => money(s.pnl, true)}, {h: "Mean R", num: 1, f: s => rr(s.mean_r)},
+    {h: "Drift (rolling expectancy vs backtest 5th pct)", f: driftCell}
+  ], st.strategies, "No strategies"));
+  $("positions").replaceChildren(table([
+    {h: "Strategy", f: r => r.strategy}, {h: "Side", f: r => side(r.dir)}, {h: "Lots", num: 1, f: r => r.lots.toFixed(2)}, {h: "Entry", num: 1, f: r => px(r.entry_px)},
+    {h: "Stop", num: 1, f: r => px(r.stop_px)}, {h: "Target", num: 1, f: r => px(r.tgt_px)}, {h: "Risk", num: 1, f: r => money(r.risk_usd)}, {h: "Opened (UTC)", f: r => when(r.entry_ts)}
+  ], st.positions, "Flat: no open positions"));
+  $("trades").replaceChildren(table([
+    {h: "Closed (UTC)", f: r => when(r.exit_ts)}, {h: "Strategy", f: r => r.strategy}, {h: "Side", f: r => side(r.dir)}, {h: "Lots", num: 1, f: r => r.lots.toFixed(2)},
+    {h: "Exit", f: r => r.reason}, {h: "P&L", num: 1, f: r => money(r.pnl, true)}, {h: "R", num: 1, f: r => rr(r.r_multiple)}
+  ], st.trades, "No closed trades yet"));
+  $("intents").replaceChildren(table([
+    {h: "Time (UTC)", f: r => when(r.ts)}, {h: "Strategy", f: r => r.strategy}, {h: "Side", f: r => side(r.dir)}, {h: "Outcome", f: r => r.status},
+    {h: "By", f: r => el("span", {class: "muted"}, r.decided_by || "")}, {h: "Note", wrap: 1, f: r => el("span", {class: "muted"}, r.reasons || "")}
+  ], st.intents, "No signals yet"));
+  const lvl = {info: "good", warning: "warning", error: "serious", critical: "critical"};
+  $("events").replaceChildren(table([
+    {h: "Time (UTC)", f: e => when(e.ts || new Date(e.wall * 1000).toISOString())}, {h: "Level", f: e => status(lvl[e.level] || "good", e.level)}, {h: "Kind", f: e => e.kind}, {h: "Message", wrap: 1, f: e => e.message}
+  ], st.events, "No events"));
+}
+async function refresh() {
+  try {
+    const r = await fetch("/api/state"); const st = await r.json();
+    if (st.error) throw new Error(st.error);
+    $("app").classList.remove("stale"); render(st);
+  } catch (e) { $("app").classList.add("stale"); $("asof").textContent = "connection lost: " + e.message; }
+}
+refresh(); setInterval(refresh, 5000);
+let rz; window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(drawChart, 120); });
+</script>
+</body>
+</html>

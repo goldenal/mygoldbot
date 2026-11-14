@@ -104,11 +104,25 @@ def compile_signals(spec: StrategySpec, df: pd.DataFrame) -> dict:
     lots = lots.where(lots >= sz.min_lots, 0.0)
 
     time_flag = _time_flag(df.index, spec.exit.time_exit_utc, TF_MINUTES[spec.timeframe])
+    tr = substitute_params(spec.exit.trail, p) if spec.exit.trail else None
+    if tr is None:
+        trail_dist = np.full(len(df), np.nan)
+        trail_act = np.zeros(len(df))
+    else:
+        if "atr_mult" in tr:
+            trail_dist = (ensure_feature(df, f"atr_{int(tr.get('atr_n', 14))}") * float(tr["atr_mult"])).to_numpy(dtype=float)
+        elif "fixed" in tr:
+            trail_dist = np.full(len(df), float(tr["fixed"]))
+        else:
+            raise ValueError("trail must have atr_mult or fixed")
+        trail_dist = np.where(trail_dist > 0, trail_dist, np.nan)
+        trail_act = float(tr.get("activate_r", 0.0)) * stop_dist.to_numpy(dtype=float)
     return {
         "sig_long": sig_long.to_numpy(), "sig_short": sig_short.to_numpy(),
         "exit_long": exit_long.to_numpy(), "exit_short": exit_short.to_numpy(),
         "stop_dist": stop_dist.to_numpy(dtype=float), "target_dist": target_dist.to_numpy(dtype=float),
         "lots": lots.to_numpy(dtype=float), "time_exit_flag": time_flag,
+        "trail_dist": trail_dist, "trail_act": trail_act,
     }
 
 

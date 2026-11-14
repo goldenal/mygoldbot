@@ -10,3 +10,12 @@ reports/*.md
 registry.sqlite
 *.egg-info/
 .env
+.venv/
+data/calendar/
+live*.sqlite*
+registry.sqlite-*
+reports/*.csv
+reports/*.html
+.playwright-mcp/
+.DS_Store
+replay*.sqlite*

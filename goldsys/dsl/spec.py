@@ -30,6 +30,7 @@ class ExitSpec:
     max_bars: int | None = None
     exit_long: Any = None                      # boolean expression
     exit_short: Any = None
+    trail: dict | None = None                  # trailing stop: {"atr_mult": 2.0, "atr_n": 14} or {"fixed": 5.0}, optional "activate_r": 1.0
 
 
 @dataclass
@@ -84,6 +85,8 @@ class StrategySpec:
     def hash(self) -> str:
         d = self.to_dict()
         d.pop("rationale", None)
+        if d.get("exit", {}).get("trail") is None:     # keep the hash of every spec written before trailing existed
+            d["exit"].pop("trail", None)
         return hashlib.sha256(json.dumps(d, sort_keys=True, default=str).encode()).hexdigest()[:16]
 
     # ------------------------------------------------------------------ helpers

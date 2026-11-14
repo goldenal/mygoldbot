@@ -49,3 +49,40 @@ def test_gp_operators_preserve_types():
         c = mutate(crossover(rng.choice(pop), rng.choice(pop), rng), rng)
         assert well_typed(c)
         pop.append(c)
+
+
+# ---------------------------------------------------------------- trailing stop in the strategy format
+
+def test_adding_the_trail_field_did_not_change_the_hash_of_existing_specs():
+    import hashlib, json
+    from goldsys.dsl.spec import StrategySpec
+    s = StrategySpec.from_yaml("strategies/vol_momentum.yaml")
+    d = s.to_dict(); d.pop("rationale", None); d["exit"].pop("trail", None)
+    assert s.hash() == hashlib.sha256(json.dumps(d, sort_keys=True, default=str).encode()).hexdigest()[:16]
+    assert s.with_params(stop_atr=2.5).hash() != s.hash()
+    t = StrategySpec.from_yaml("strategies/vol_momentum_trail.yaml")
+    assert t.exit.trail and t.hash() != s.hash()
+
+
+def test_trail_compiles_to_distances_and_validates():
+    import numpy as np
+    from goldsys.data.synthetic import make_m1
+    from goldsys.data.store import resample_bars
+    from goldsys.dsl.compile import compile_signals
+    from goldsys.dsl.spec import StrategySpec
+    from goldsys.features.registry import base_features
+    import datetime as dt
+    df = base_features(resample_bars(make_m1(dt.date(2024, 1, 1), dt.date(2024, 1, 20), seed=2), "M15"))
+    base = {"name": "t", "timeframe": "M15", "entry_long": {"op": "gt", "args": ["close", "ema_20"]},
+            "exit": {"stop": {"atr_mult": 2.0, "atr_n": 14}, "target": None}, "sizing": {"type": "fixed", "lots": 0.1}}
+    none = compile_signals(StrategySpec.from_dict(base), df)
+    assert np.isnan(none["trail_dist"]).all() and (none["trail_act"] == 0).all()
+    a = compile_signals(StrategySpec.from_dict({**base, "exit": {**base["exit"], "trail": {"atr_mult": "$k", "atr_n": 14, "activate_r": 0.5}}, "params": {"k": 1.5}}), df)
+    atr = df["close"].diff().abs().rolling(14).mean()
+    ok = ~np.isnan(a["trail_dist"])
+    assert ok.sum() > 100 and np.allclose(a["trail_act"][ok], 0.5 * a["stop_dist"][ok])
+    f = compile_signals(StrategySpec.from_dict({**base, "exit": {**base["exit"], "trail": {"fixed": 3.0}}}), df)
+    assert (f["trail_dist"] == 3.0).all()
+    import pytest
+    with pytest.raises(ValueError, match="trail must have"):
+        compile_signals(StrategySpec.from_dict({**base, "exit": {**base["exit"], "trail": {"bogus": 1}}}), df)
