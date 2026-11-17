@@ -1,5 +1,7 @@
 # goldsys: a gold (XAUUSD) trading research platform
 
+**New here? Start with the step-by-step guide with screenshots: open `docs/tutorial.html` in your browser (one file, works offline). The same text is in [docs/TUTORIAL.md](docs/TUTORIAL.md); after editing it, run `python scripts/build_tutorial.py` to rebuild the page.**
+
 All five phases of the plan in `PLAN.md`: data lake, feature library, strategy DSL, screening backtester,
 validation gate, three-tier strategy formulation, portfolio step, risk and hybrid (human) layer, execution
 through a broker bridge, forward-test reconciliation, and the monthly live review. Everything is Python;
@@ -81,8 +83,16 @@ exit:
 From the bar after the fill the stop follows the best price reached, `trail` behind it, once the trade is `activate_r` x the initial stop in profit. It only
 tightens, and a bar's own extreme moves it for the NEXT bar (inside a bar the order of high and low is unknowable). A trailed stop exits as `trail`.
 `strategies/vol_momentum_trail.yaml` is a working template. The backtester works on strategy-timeframe bars; the replay trails on every M1 bar, so an H1
-strategy's replay can differ slightly from its backtest (an M1 strategy matches trade for trade; `tests/test_replay_sim.py`). **The live runner and the
-Nautilus adapter refuse trailing strategies** (stops are set once, at entry) rather than ignore the trail.
+strategy's replay can differ slightly from its backtest (an M1 strategy matches trade for trade; `tests/test_replay_sim.py`).
+
+**Live.** The live runner supports trailing stops. It keeps each trade's best price and, after every closed bar, moves the venue's stop (`Broker.modify_position`:
+paper broker, simulated venue, MT5 via `TRADE_ACTION_SLTP`, and through the bridge); the move applies from the NEXT bar, exactly as in the backtester, and a paper
+run through the runner matches the backtester trade for trade (`tests/test_live_parity.py`). The state is saved in the ledger, so a restart resumes trailing (if the
+state is missing the runner says so loudly, turns the trail off for that position and leaves the venue's stop where it is). A venue that rejects a move keeps the old
+stop in force, the runner reports it and retries on the next bar. On a real venue a trailed stop that is already beyond the market cannot be placed, so the position is
+closed at market instead (reason `trail`). Exits that hit a trailed stop are recorded as `trail`; R is still measured against the stop set at entry; the dashboard
+shows "Stop now" beside "Set at entry". The Nautilus adapter does not support trailing and refuses such strategies. `scripts/mt5_bridge_server.py --selftest` now also
+moves the stop on a DEMO account and reads it back: run it before relying on trailing with a real MT5 account (the MT5 adapter has not been run against a terminal).
 
 ## News calendar
 

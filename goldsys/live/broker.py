@@ -55,7 +55,7 @@ class Fill:
     lots: float
     kind: str                  # "entry" | "exit"
     price: float
-    reason: str = ""           # exits: stop | target | signal | time | reverse | manual | kill | end | external
+    reason: str = ""           # exits: stop | trail | target | signal | time | reverse | manual | kill | end | external
     pnl: float = 0.0           # exits: net of commission and swap
     commission: float = 0.0
     swap: float = 0.0
@@ -104,6 +104,11 @@ class Broker(ABC):
     @abstractmethod
     def poll_fills(self) -> list[Fill]:
         """Exits the venue did on its own (stop / target / manual close in the terminal) since the last call."""
+
+    def modify_position(self, position_id: str, stop_px: float | None = None, tgt_px: float | None = None) -> Position:
+        """Move an open position's protective stop and/or target to absolute prices (None = leave as is). Needed for trailing stops.
+        A venue that cannot do it raises BrokerError, and the runner then reports that the trail is not being applied."""
+        raise BrokerError(f"{self.name} cannot modify a position's stop")
 
     def bars(self, timeframe: str = "M1", n: int = 500) -> pd.DataFrame:
         """Most recent CLOSED bars (bid OHLC + spread), UTC index labelled by open time. Optional."""
@@ -207,6 +212,16 @@ class PaperBroker(Broker):
 
     def exit_fill(self, position_id: str) -> Fill | None:
         return self._closed.get(position_id)
+
+    def modify_position(self, position_id: str, stop_px: float | None = None, tgt_px: float | None = None) -> Position:
+        p = self._pos.get(position_id)
+        if p is None:
+            raise BrokerError(f"unknown position {position_id}")
+        if stop_px is not None:
+            p.stop_px = float(stop_px)
+        if tgt_px is not None:
+            p.tgt_px = float(tgt_px)
+        return Position(**asdict(p))
 
     def close_position(self, position_id: str, reason: str = "signal") -> Fill:
         p = self._pos.get(position_id)

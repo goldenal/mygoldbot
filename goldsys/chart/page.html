@@ -78,7 +78,10 @@ button:disabled { opacity: .45; cursor: default; }
 .row select { flex: 1; min-width: 0; }
 .mini { font-size: 12px; } .mini td, .mini th { padding: 2px 5px 2px 0; }
 .chk { display: flex; gap: 6px; align-items: center; }
+#rp-report { overflow-x: auto; }
 #rp-report table { margin-top: 6px; }
+#rp-report td { white-space: normal; }
+.pill[hidden] { display: none; }
 .pill { display: inline-block; border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; font-size: 11px; color: var(--text-2); }
 .attr { margin-top: 18px; font-size: 11px; color: var(--text-3); }
 .attr a { color: inherit; }
@@ -500,6 +503,7 @@ async function rpEnter(st) {
   $("rp-setup").hidden = true; $("rp-live").hidden = false; $("chartonly").hidden = true; $("rp-badge").hidden = false;
   S.tf = "M15"; store("tf", "M15"); for (const b of $("tfs").children) b.className = b.textContent === "M15" ? "on" : "";      // strategies here trade M15/H1: start where the signals are
   for (const id of ["symbol", "gobtn", "latest", "goto"]) $(id).disabled = true;
+  $("goto").value = "";
   $("rp-speed").replaceChildren(...SPEEDS.map((x, i) => el("option", { value: String(i), textContent: x.label, selected: i === 1 })));
   await loadWindow(null, null);
   rpRender(st);

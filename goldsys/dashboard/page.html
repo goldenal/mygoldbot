@@ -245,7 +245,8 @@ function render(st) {
   ], st.strategies, "No strategies"));
   $("positions").replaceChildren(table([
     {h: "Strategy", f: r => r.strategy}, {h: "Side", f: r => side(r.dir)}, {h: "Lots", num: 1, f: r => r.lots.toFixed(2)}, {h: "Entry", num: 1, f: r => px(r.entry_px)},
-    {h: "Stop", num: 1, f: r => px(r.stop_px)}, {h: "Target", num: 1, f: r => px(r.tgt_px)}, {h: "Risk", num: 1, f: r => money(r.risk_usd)}, {h: "Opened (UTC)", f: r => when(r.entry_ts)}
+    {h: "Stop now", num: 1, f: r => px(r.stop_now == null ? r.stop_px : r.stop_now) + (r.trailing ? " ↗" : "")}, {h: "Set at entry", num: 1, f: r => px(r.stop_px)},
+    {h: "Target", num: 1, f: r => px(r.tgt_px)}, {h: "Risk", num: 1, f: r => money(r.risk_usd)}, {h: "Opened (UTC)", f: r => when(r.entry_ts)}
   ], st.positions, "Flat: no open positions"));
   $("trades").replaceChildren(table([
     {h: "Closed (UTC)", f: r => when(r.exit_ts)}, {h: "Strategy", f: r => r.strategy}, {h: "Side", f: r => side(r.dir)}, {h: "Lots", num: 1, f: r => r.lots.toFixed(2)},

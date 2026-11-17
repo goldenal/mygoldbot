@@ -45,9 +45,6 @@ def build_runner(pf: Portfolio, broker: Broker, ledger: Ledger, cost: CostModel 
     slots = []
     for e in pf.active():
         spec = e.load_spec()
-        if spec.exit.trail:
-            raise StageError(f"{e.name}: this strategy uses a trailing stop, which the live runner cannot manage yet (stops are set once, at entry). "
-                             "Trade it in the replay, or remove the trail, until live trailing is built.")
         if spec.hash() != e.spec_hash:
             raise StageError(f"{e.name}: the spec file changed since the portfolio was built (hash {spec.hash()} != {e.spec_hash}). Rebuild the portfolio.")
         if bars_m1 is not None:

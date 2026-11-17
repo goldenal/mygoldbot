@@ -387,15 +387,263 @@ def test_lost_exit_is_recovered_from_the_venue_and_second_runner_is_refused(forw
     assert len([e for e in led.events(1000) if e["level"] in ("error", "critical")]) <= 2   # no error flood
 
 
-def test_live_runner_refuses_a_trailing_strategy_instead_of_silently_ignoring_the_trail(tmp_path):
-    import yaml
-    from goldsys.live.session import StageError, build_runner
-    d = StrategySpec.from_yaml("strategies/vol_momentum.yaml").to_dict()
-    d["exit"]["trail"] = {"atr_mult": 2.0, "atr_n": 14}
-    p = tmp_path / "trail.yaml"
-    p.write_text(yaml.safe_dump(d))
-    spec = StrategySpec.from_yaml(p)
-    pf = Portfolio(stage="demo", strategies=[StrategyEntry(name=spec.name, spec_path=str(p), spec_hash=spec.hash(), mode="approve")])
-    cost = CostModel()
-    with pytest.raises(StageError, match="trailing stop"):
-        build_runner(pf, PaperBroker(cost, slippage=False), Ledger(":memory:"), cost, bars_m1=make_m1(dt.date(2024, 1, 1), dt.date(2024, 1, 10), seed=1))
+# ================================================================ trailing stops in the live runner
+TRAIL = {"sig_long": True, "stop_dist": 5.0, "target_dist": float("inf"), "trail_dist": 1.0, "trail_act": 0.0}
+
+
+def test_trailing_stop_in_the_runner_is_hand_checked_and_the_exit_is_labelled_trail():
+    r = Rig({0: TRAIL})
+    r.bar(n=1)                                   # bar 0: the signal
+    for px in (2400.0, 2402.0, 2404.0):          # bar 1 is the entry bar (fill 2400.2, stop 2395.2); each bar's high then pulls the stop up for the NEXT bar
+        r.bar(px)
+        pos = r.broker.positions()
+        assert len(pos) == 1
+    # after bar 3: ext = 2404.5, stop = 2403.5. Bar 4 opens at 2401 (gap through the stop): fills at the open, labelled trail.
+    assert pos[0].stop_px == pytest.approx(2403.5)
+    r.bar(2401.0)
+    t = r.ledger.trades().iloc[0]
+    assert t["reason"] == "trail" and t["exit_px"] == pytest.approx(2401.0) and t["pnl"] == pytest.approx((2401.0 - 2400.2) * 0.1 * 100 - 0.6)
+    assert t["stop_px"] == pytest.approx(2395.2) and t["r_multiple"] == pytest.approx(t["pnl"] / (5.0 * 0.1 * 100))     # R is measured against the stop SET at entry
+    assert r.ledger.get(f"trail:{t['position_id']}") is None and r.slot.trail is None
+
+
+def test_the_trail_waits_for_its_activation_profit_and_never_loosens():
+    r = Rig({0: dict(TRAIL, trail_act=3.0)})
+    r.bar(n=1)
+    for px in (2400.0, 2401.0, 2399.0):                # best price stays under entry + 3: the original stop is untouched
+        r.bar(px)
+    assert r.broker.positions()[0].stop_px == pytest.approx(2395.2) and not r.slot.trail["trailed"]
+    r.bar(2404.5)                                      # high 2405.0 is +4.8 over the fill: trail starts, stop = 2404.0
+    assert r.broker.positions()[0].stop_px == pytest.approx(2404.0)
+    r.bar(2403.0)                                      # a lower high must not loosen it (and this bar's low 2402.5 stops the trade out at the gap open)
+    assert r.ledger.trades().iloc[0]["reason"] == "trail"
+    r2 = Rig({0: dict(TRAIL, trail_act=0.0)})
+    r2.bar(n=1); r2.bar(2410.0)
+    top = r2.broker.positions()[0].stop_px
+    r2.bar(2410.0, hl=0.1)
+    assert r2.broker.positions()[0].stop_px >= top
+
+
+def test_short_trade_trails_down_from_the_ask():
+    r = Rig({0: dict(TRAIL, sig_long=False, sig_short=True)})
+    r.bar(n=1)
+    r.bar(2400.0); r.bar(2398.0)                       # fill 2400.0 (bid); ask lows 2399.7 then 2397.7; stop = ask low + 1.0
+    assert r.broker.positions()[0].stop_px == pytest.approx(2398.7, abs=1e-9)
+    r.bar(2400.0)                                      # ask high 2400.7 touches 2398.7: exits at the gap open ask (2400.2)
+    t = r.ledger.trades().iloc[0]
+    assert t["reason"] == "trail" and t["dir"] == -1 and t["exit_px"] == pytest.approx(2400.2)
+
+
+def test_a_trailing_strategy_keeps_its_trail_through_the_approval_queue():
+    r = Rig({0: TRAIL}, mode="approve", approval_ttl_s=3600)
+    r.bar(n=2)
+    iid = r.ledger.intents("pending")[0]["id"]
+    control.approve(r.ledger, iid, "me")
+    r.bar(2400.0)
+    assert r.slot.position_id and r.slot.trail and r.slot.trail["d"] == 1.0
+    saved = r.ledger.get(f"trail:{r.slot.position_id}")
+    assert saved["stop0"] == pytest.approx(saved["entry"] - 5.0) and "dirty" not in saved
+
+
+def test_a_strategy_without_a_trail_is_untouched_by_all_this():
+    r = Rig({0: dict(sig_long=True, target_dist=float("inf"))})
+    r.bar(n=2)
+    assert r.slot.trail is None and r.broker.positions()[0].stop_px == pytest.approx(2395.2)
+    r.bar(2420.0)
+    assert r.broker.positions()[0].stop_px == pytest.approx(2395.2)
+
+
+# ---------------------------------------------------------------- the real-broker path (live_step) against a simulated venue
+def ramp_bars(t0, segments, hl=0.05):
+    from goldsys.data.store import BAR_COLS
+    rows, px = [], 100.0
+    for minutes, step in segments:
+        for _ in range(minutes):
+            o, c = px, px + step
+            rows.append((o, max(o, c) + hl, min(o, c) - hl, c, 0.2, 1.0, 1.0))
+            px = c
+    return pd.DataFrame(rows, columns=BAR_COLS, index=pd.date_range(t0, periods=len(rows), freq="1min", tz="UTC"))
+
+
+def venue_rig(bars, *, trail=(1.0, 0.0), stop_dist=3.0, start_after=30, tmp_path=None, venue_cls=None, simulated=True):
+    from goldsys.live.simvenue import SimVenue
+    cost = CostModel(slippage_mean=0.0, slippage_std=0.0, commission_per_lot_rt=0.0)
+    t0 = bars.index[0]
+    venue = (venue_cls or SimVenue)(bars, cost, start=t0 + pd.Timedelta(minutes=start_after), slippage=False, manual_clock=True)
+    venue.simulated = simulated
+    led = Ledger(tmp_path / "l.sqlite" if tmp_path else ":memory:")
+    spec = StrategySpec(name="s", timeframe="M15", exit=ExitSpec(trail={"fixed": trail[0]}))
+    slot = Slot("s", spec, Scripted({}))
+    run = LiveRunner(venue, led, [slot], RiskManager(RiskConfig(**dict(OPEN, max_data_staleness_s=10**9)), cost, store=led), cost, stage="demo")
+    run.last_bar_ns = int(venue.bars("M1", 1).index.as_unit("ns").asi8[-1])
+    q = venue.quote()
+    run._execute(slot, led.add_intent(q.ts, "s", 1, 0.1, 0.1, q.ask, stop_dist, None, "accepted"), 1, 0.1, stop_dist, float("inf"), q.ts, trail=trail)
+    return venue, led, slot, run
+
+
+def step(venue, run, n=1):
+    for _ in range(n):
+        venue.advance(60)
+        run.live_step(venue.now())
+
+
+T_START = pd.Timestamp("2024-01-02 09:00", tz="UTC")
+RAMP = [(30, 0.0), (60, 0.1), (40, -0.5)]
+
+
+def test_live_step_moves_the_venues_stop_up_the_ramp_and_the_exit_is_a_trail():
+    venue, led, slot, run = venue_rig(ramp_bars(T_START, RAMP))
+    pid = slot.position_id
+    stops = []
+    for _ in range(90):
+        step(venue, run)
+        if venue._pos:
+            stops.append(venue._pos[pid].stop_px)
+    assert stops[0] == pytest.approx(97.2) or stops[0] > 97.2
+    assert all(b >= a - 1e-12 for a, b in zip(stops, stops[1:])) and stops[-1] == pytest.approx(105.05, abs=1e-9)         # follows each new high by 1.0 and never loosens
+    assert any(b > a for a, b in zip(stops, stops[1:]))
+    step(venue, run, 10)                                                                                           # the drop: the venue stops it out on its own
+    t = led.trades().iloc[0]
+    assert not venue._pos and t["reason"] == "trail" and t["exit_px"] == pytest.approx(105.05)
+    assert t["pnl"] == pytest.approx((105.05 - 100.2) * 0.1 * 100) and t["r_multiple"] == pytest.approx(t["pnl"] / 30.0)
+    assert led.get(f"trail:{pid}") is None and slot.trail is None and led.verify_chain()["ok"]
+
+
+def test_restart_adopts_the_position_with_its_trailing_state_and_keeps_trailing(tmp_path):
+    bars = ramp_bars(T_START, RAMP)
+    venue, led, slot, run = venue_rig(bars, tmp_path=tmp_path)
+    pid = slot.position_id
+    step(venue, run, 45)
+    before = led.get(f"trail:{pid}")
+    assert before and before["trailed"] and before["stop"] > 99.0
+    slot2 = Slot("s", slot.spec, Scripted({}))
+    run2 = LiveRunner(venue, led, [slot2], RiskManager(RiskConfig(**dict(OPEN, max_data_staleness_s=10**9)), venue.cost, store=led), venue.cost, stage="demo")
+    run2.last_bar_ns = run.last_bar_ns
+    run2.adopt_positions(venue.now())
+    assert slot2.position_id == pid and slot2.trail["stop"] == pytest.approx(before["stop"]) and slot2.trail["ext"] == pytest.approx(before["ext"])
+    step(venue, run2, 80)
+    t = led.trades().iloc[0]
+    assert t["reason"] == "trail" and t["exit_px"] == pytest.approx(105.05)
+
+
+def test_restart_without_saved_state_says_so_and_leaves_the_venues_stop_alone(tmp_path):
+    bars = ramp_bars(T_START, RAMP)
+    venue, led, slot, run = venue_rig(bars, tmp_path=tmp_path)
+    pid = slot.position_id
+    step(venue, run, 45)
+    frozen = venue._pos[pid].stop_px
+    led.set(f"trail:{pid}", None)                                      # the state is gone
+    slot2 = Slot("s", slot.spec, Scripted({}))
+    run2 = LiveRunner(venue, led, [slot2], RiskManager(RiskConfig(**dict(OPEN, max_data_staleness_s=10**9)), venue.cost, store=led), venue.cost, stage="demo")
+    run2.last_bar_ns = run.last_bar_ns
+    run2.adopt_positions(venue.now())
+    assert slot2.trail is None and any(e["level"] == "critical" and "no saved trailing state" in e["message"] for e in led.events(50))
+    step(venue, run2, 90)
+    assert not venue._pos
+    t = led.trades().iloc[0]
+    assert t["reason"] == "stop" and t["exit_px"] == pytest.approx(frozen)             # it exits at the stop it had: not relabelled, not moved
+
+
+def test_a_rejected_stop_move_keeps_the_old_stop_says_so_and_is_retried():
+    from goldsys.live.simvenue import SimVenue
+
+    class Flaky(SimVenue):
+        fail = 3
+
+        def modify_position(self, *a, **k):
+            if Flaky.fail > 0:
+                Flaky.fail -= 1
+                raise BrokerError("retcode 10016 invalid stops")
+            return super().modify_position(*a, **k)
+
+    Flaky.fail = 3
+    venue, led, slot, run = venue_rig(ramp_bars(T_START, RAMP), venue_cls=Flaky)
+    pid = slot.position_id
+    step(venue, run, 3)
+    assert venue._pos[pid].stop_px == pytest.approx(97.2)                              # still the entry stop: the protection never lapsed
+    assert any(e["kind"] == "trail" and "did not accept" in e["message"] for e in led.events(50))
+    step(venue, run, 10)
+    assert venue._pos[pid].stop_px > 99.0 and slot.trail["dirty"] is False             # retried and applied with the latest value, not a stale one
+
+
+def test_on_a_real_venue_a_trailed_stop_the_market_is_already_through_closes_at_market():
+    """A venue refuses a stop on the wrong side of the price, so when a spike sets the trail above where price has already fallen back to, that IS the exit."""
+    from goldsys.data.store import BAR_COLS
+    bars = ramp_bars(T_START, [(60, 0.0)])
+    bars.iloc[40] = (100.0, 110.0, 99.9, 100.0, 0.2, 1.0, 1.0)                         # spike up and fully back within one bar
+    venue, led, slot, run = venue_rig(bars, stop_dist=15.0, simulated=False)
+    step(venue, run, 11)
+    t = led.trades().iloc[0]
+    assert not venue._pos and t["reason"] == "trail" and t["exit_px"] == pytest.approx(100.0)     # at the market (bid 100), not at the 109 the trail computed
+    assert any("already through the trailed stop" in e["message"] for e in led.events(50))
+
+
+def test_mt5_modify_sends_the_right_order_and_skips_a_no_op():
+    from types import SimpleNamespace
+    from goldsys.live.mt5 import MT5Broker
+
+    class FakeMT5:
+        TRADE_ACTION_SLTP, POSITION_TYPE_BUY, TRADE_RETCODE_DONE = 6, 0, 10009
+
+        def __init__(self):
+            self.sent, self.retcode = [], 10009
+            self.pos = [SimpleNamespace(ticket=77, comment="s", symbol="XAUUSD", type=0, volume=0.1, price_open=2000.0, time=1_700_000_000, sl=1990.0, tp=2040.0)]
+
+        def positions_get(self, ticket=None, symbol=None):
+            return [p for p in self.pos if p.ticket == ticket] if ticket is not None else self.pos
+
+        def order_send(self, req):
+            self.sent.append(req)
+            return SimpleNamespace(retcode=self.retcode, comment="done" if self.retcode == 10009 else "invalid stops")
+
+        def last_error(self):
+            return (1, "x")
+
+    fake = FakeMT5()
+    b = object.__new__(MT5Broker)
+    b.mt5, b.symbol, b.digits, b.point, b.magic, b.offset_s, b._known = fake, "XAUUSD", 2, 0.01, 26111300, 0, {}
+    pos = b.modify_position("77", stop_px=1995.123)
+    assert fake.sent == [{"action": 6, "symbol": "XAUUSD", "position": 77, "sl": 1995.12, "tp": 2040.0, "magic": 26111300}]      # tp kept, sl rounded to the broker's digits
+    assert pos.stop_px == 1995.12 and pos.tgt_px == 2040.0
+    b.modify_position("77", stop_px=1990.0)                                                    # same as now: nothing sent (MT5 would answer 'no changes' with an error)
+    assert len(fake.sent) == 1
+    fake.retcode = 10016
+    with pytest.raises(BrokerError, match="rejected"):
+        b.modify_position("77", stop_px=1999.0)
+    with pytest.raises(BrokerError, match="not found"):
+        b.modify_position("999", stop_px=1.0)
+
+
+def test_modify_through_the_bridge_and_unsupported_venues_say_so():
+    from goldsys.live.broker import Broker
+    cost = CostModel(slippage_mean=0.0, slippage_std=0.0)
+    paper = PaperBroker(cost, slippage=False)
+    paper.set_quote(T0, 2400.0, 0.2)
+    srv = make_server(paper, "t" * 32, port=0)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        rb = RemoteBroker(f"http://127.0.0.1:{srv.server_address[1]}", "t" * 32)
+        f = rb.open_position("s", 1, 0.1, 5.0, 10.0)
+        p = rb.modify_position(f.position_id, 2398.0)
+        assert p.stop_px == pytest.approx(2398.0) and p.tgt_px == pytest.approx(2410.2) and rb.positions()[0].stop_px == pytest.approx(2398.0)
+        with pytest.raises(BrokerError):
+            rb.modify_position("nope", 1.0)
+    finally:
+        srv.shutdown()
+
+    class Bare(Broker):
+        name = "bare"
+        connected = quote = account = positions = open_position = close_position = poll_fills = lambda self, *a, **k: None
+    with pytest.raises(BrokerError, match="cannot modify"):
+        Bare().modify_position("1", 1.0)
+
+
+def test_dashboard_state_shows_the_stop_now_not_only_the_entry_stop():
+    led = Ledger(":memory:")
+    led.open_trade("P1", "s", "XAUUSD", "demo", 1, 0.1, T0, 2400.2, 2395.2, None)
+    led.open_trade("P2", "s2", "XAUUSD", "demo", 1, 0.1, T0, 2400.2, 2395.2, None)
+    led.set("trail:P1", {"stop": 2403.5, "ext": 2404.5})
+    st = control.state(led)
+    by = {p["position_id"]: p for p in st["positions"]}
+    assert by["P1"]["trailing"] and by["P1"]["stop_now"] == 2403.5 and by["P1"]["stop_px"] == 2395.2
+    assert not by["P2"]["trailing"] and by["P2"]["stop_now"] == 2395.2

@@ -22,7 +22,7 @@ import requests
 
 from .broker import Account, Broker, BrokerError, Fill, Position, Quote
 
-METHODS = ("connected", "quote", "account", "positions", "open_position", "close_position", "poll_fills", "bars", "now", "exit_fill")
+METHODS = ("connected", "quote", "account", "positions", "open_position", "close_position", "modify_position", "poll_fills", "bars", "now", "exit_fill")
 
 
 def _enc(o):
@@ -135,6 +135,9 @@ class RemoteBroker(Broker):
 
     def close_position(self, position_id: str, reason: str = "signal") -> Fill:
         return self._call("close_position", position_id, reason)
+
+    def modify_position(self, position_id: str, stop_px: float | None = None, tgt_px: float | None = None) -> Position:
+        return self._call("modify_position", position_id, stop_px, tgt_px)
 
     def poll_fills(self) -> list[Fill]:
         return self._call("poll_fills")

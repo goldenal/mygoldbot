@@ -143,6 +143,23 @@ class MT5Broker(Broker):
         self._known.pop(position_id, None)
         return f
 
+    def modify_position(self, position_id: str, stop_px: float | None = None, tgt_px: float | None = None) -> Position:
+        """Move the position's stop / target (TRADE_ACTION_SLTP). The broker refuses a stop closer to the market than its minimum stop distance, or on the
+        wrong side of the price; that surfaces as a BrokerError and the runner decides what to do about it."""
+        mt5 = self.mt5
+        res = mt5.positions_get(ticket=int(position_id))
+        if not res:
+            raise BrokerError(f"position {position_id} not found (it may just have been stopped out)")
+        p = res[0]
+        sl = round(float(stop_px), self.digits) if stop_px is not None else float(p.sl)
+        tp = round(float(tgt_px), self.digits) if tgt_px is not None else float(p.tp)
+        if abs(sl - float(p.sl)) >= self.point / 2 or abs(tp - float(p.tp)) >= self.point / 2:      # MT5 answers "no changes" with an error: skip the call instead
+            self._send({"action": mt5.TRADE_ACTION_SLTP, "symbol": self.symbol, "position": p.ticket, "sl": sl, "tp": tp, "magic": self.magic})
+        pos = Position(str(p.ticket), p.comment, p.symbol, 1 if p.type == mt5.POSITION_TYPE_BUY else -1, float(p.volume), float(p.price_open), self._utc(p.time),
+                       sl or None, tp or None)
+        self._known[position_id] = pos
+        return pos
+
     def _exit_fill(self, position_id: str, reason: str | None = None) -> Fill:
         """Build the exit fill from the deal history of one position (price, profit, commission, swap)."""
         mt5 = self.mt5

@@ -64,9 +64,10 @@ class Ledger:
         r = self.conn.execute("SELECT value FROM kv WHERE key=?", (key,)).fetchone()
         return json.loads(r[0]) if r else default
 
-    def set(self, key: str, value) -> None:
+    def set(self, key: str, value, commit: bool = True) -> None:
         self.conn.execute("INSERT INTO kv (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, json.dumps(value, default=str)))
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
 
     # ------------------------------------------------------------------ events
     def event(self, level: str, kind: str, message: str, data: dict | None = None, ts=None) -> None:

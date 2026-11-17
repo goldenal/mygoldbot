@@ -22,13 +22,14 @@ from ..dsl.compile import compile_signals
 from ..dsl.spec import StrategySpec
 from ..features.registry import base_features
 
-KEYS = ("sig_long", "sig_short", "exit_long", "exit_short", "stop_dist", "target_dist", "lots", "time_exit_flag")
+KEYS = ("sig_long", "sig_short", "exit_long", "exit_short", "stop_dist", "target_dist", "lots", "time_exit_flag", "trail_dist", "trail_act")
 
 
 def _row(sig: dict, i: int) -> dict:
     return {"sig_long": bool(sig["sig_long"][i]), "sig_short": bool(sig["sig_short"][i]), "exit_long": bool(sig["exit_long"][i]), "exit_short": bool(sig["exit_short"][i]),
             "stop_dist": float(np.nan_to_num(sig["stop_dist"][i], nan=np.inf)), "target_dist": float(np.nan_to_num(sig["target_dist"][i], nan=np.inf)),
-            "lots": float(np.nan_to_num(sig["lots"][i], nan=0.0)), "time_exit_flag": bool(sig["time_exit_flag"][i])}
+            "lots": float(np.nan_to_num(sig["lots"][i], nan=0.0)), "time_exit_flag": bool(sig["time_exit_flag"][i]),
+            "trail_dist": float(np.nan_to_num(sig["trail_dist"][i], nan=0.0)), "trail_act": float(np.nan_to_num(sig["trail_act"][i], nan=0.0))}
 
 
 class PrecomputedSignals:

@@ -45,6 +45,14 @@ if a.selftest:
     lots = 0.01 if a.paper else broker.vol_min
     f = broker.open_position("selftest", 1, lots, stop_dist=20.0, target_dist=40.0); print("entry fill:", f)
     print("positions:", broker.positions())
+    # trailing stops rely on moving the stop: tighten it by 5 and read it back, then show that the same value again is a harmless no-op
+    px = f.stop_px + 5.0
+    try:
+        print("modify_position ->", broker.modify_position(f.position_id, stop_px=px))
+        print("positions (stop should be", round(px, 2), "):", broker.positions())
+        print("modify_position again (no change) ->", broker.modify_position(f.position_id, stop_px=px))
+    except Exception as e:  # noqa: BLE001
+        print("MODIFY FAILED:", e, "-- trailing stops will not work with this broker/account until this is understood")
     time.sleep(2)
     print("exit fill:", broker.close_position(f.position_id, "manual"))
     print("positions after close:", broker.positions(), "| poll_fills:", broker.poll_fills())

@@ -98,6 +98,10 @@ def state(ledger: Ledger, pf=None, max_points: int = 400) -> dict:
                            "mean_r": float(np.mean(r)) if r else None, "drift": drift_status(r, ref), "rolling_r": rolling_mean_r(r, ref["window"]) if ref.get("window") else []})
     out["strategies"] = strategies
     out["positions"] = ledger.open_trades()
+    for p in out["positions"]:
+        t = ledger.get(f"trail:{p['position_id']}")
+        p["trailing"] = bool(t)
+        p["stop_now"] = t["stop"] if t else p["stop_px"]          # a trailing position's stop moves; stop_px stays the one set at entry (it defines R)
     out["pending"] = ledger.intents("pending")
     out["intents"] = ledger.intents(n=25)
     tail = closed.sort_values("exit_ts").tail(25).iloc[::-1]

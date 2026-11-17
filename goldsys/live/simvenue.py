@@ -81,6 +81,10 @@ class SimVenue(PaperBroker):
         self._sync()
         return super().poll_fills()
 
+    def modify_position(self, position_id, stop_px=None, tgt_px=None):
+        self._sync()                       # bars that already closed are resolved against the OLD stop, as at a real venue
+        return super().modify_position(position_id, stop_px, tgt_px)
+
     def bars(self, timeframe: str = "M1", n: int = 500) -> pd.DataFrame:
         self._sync()
         tfm = TF_MINUTES[timeframe]

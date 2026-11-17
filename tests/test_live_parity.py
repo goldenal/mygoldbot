@@ -97,3 +97,21 @@ def test_rolling_signals_equal_precomputed(bars):
             assert a[k] == b[k], (i, k)
         for k in ("stop_dist", "target_dist", "lots"):
             assert a[k] == pytest.approx(b[k], rel=1e-9, abs=1e-9), (i, k)
+
+
+def test_paper_runner_with_a_trailing_stop_matches_the_backtester_trade_for_trade(bars):
+    """The runner moves the venue's stop after every bar; the backtester ratchets inside its loop. Same trades, same exits, same reasons."""
+    spec = StrategySpec.from_dict({"name": "trail_t", "timeframe": "M15", "entry_long": {"op": "cross_above", "args": ["close", "ema_20"]}, "entry_short": "mirror",
+                                   "exit": {"stop": {"atr_mult": 2.0, "atr_n": 14}, "target": None, "max_bars": 200, "trail": {"atr_mult": 1.0, "atr_n": 14, "activate_r": 0.5}},
+                                   "sizing": {"type": "fixed", "lots": 0.05}})
+    cost = no_slip_cost()
+    bt = backtest_spec(spec, bars, cost, cache_key=None)
+    ledger, broker = run_live(spec, bars, cost)
+    live = ledger.trades()
+    assert (bt.trades["reason"] == "trail").sum() > 20, "the scenario must actually trail"
+    assert len(live) == len(bt.trades)
+    assert (live["entry_ts"].to_numpy() == bt.trades["entry_ts"].to_numpy()).all() and (live["exit_ts"].to_numpy() == bt.trades["exit_ts"].to_numpy()).all()
+    assert list(live["reason"]) == list(bt.trades["reason"])
+    for col in ("lots", "entry_px", "exit_px", "pnl"):
+        assert np.allclose(live[col].to_numpy(), bt.trades[col].to_numpy(), atol=1e-6), col
+    assert abs(broker.account().equity - bt.equity.iloc[-1]) < 1e-4 and ledger.verify_chain()["ok"]

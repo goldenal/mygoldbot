@@ -10,6 +10,10 @@ Two ways to drive it:
     feed_bar(...)    simulated execution: replays and paper trading on a live bar feed
     live_step(now)   a real broker: poll closed M1 bars, act at the current quote
 
+Trailing stops: the runner keeps each trailing trade's best price and moves the venue's stop after every closed bar (the move applies from the NEXT bar,
+exactly as in the backtester). The state is persisted, so a restart resumes trailing. A venue that rejects the move leaves the old stop in place and the
+runner says so; on a real venue, a trailed stop that is already on the wrong side of the market closes the position at market instead (reason "trail").
+
 Between the signal and the order sit, in this order: strategy mode (auto / approve / off), the
 risk manager (limits, kill switch, news blackout, spread guard) and the approval queue. Exits are
 never blocked by any of them. Everything is written to the ledger.
@@ -56,6 +60,7 @@ class Slot:
     entry_idx: int = -1
     live_r: list = field(default_factory=list)
     drift_tripped: bool = False
+    trail: dict | None = None                       # trailing-stop state of the open position: d, a, entry, stop0, stop, ext, trailed, from_ns, dirty
 
     def __post_init__(self):
         self.tf_ns = TF_MINUTES[self.spec.timeframe] * MIN_NS
@@ -149,6 +154,8 @@ class LiveRunner:
         self.on_open(ts_ns, ts)
         self.broker.on_bar(ts, o, h, l, c, spread)
         self._sync_fills()
+        self._ratchet(ts_ns, h, l, spread)
+        self._push_stops(ts)
         self.on_close(ts_ns, ts, o, h, l, c, spread, ticks, volume)
         self._housekeeping(ts_ns, ts)
 
@@ -199,9 +206,11 @@ class LiveRunner:
                 if self.last_bar_ns is not None and ns[i] <= self.last_bar_ns:
                     continue
                 r = bars.iloc[i]
+                self._ratchet(int(ns[i]), float(r["high"]), float(r["low"]), float(r["spread"]))
                 self.on_close(int(ns[i]), bars.index[i], float(r["open"]), float(r["high"]), float(r["low"]), float(r["close"]), float(r["spread"]),
                               float(r.get("ticks", 0.0)), float(r.get("volume", 0.0)))
                 n_new += 1
+            self._push_stops(now)
         if n_new:
             open_ns = self.last_bar_ns + self.exec_ns
             fresh = (now - pd.Timestamp(open_ns, tz="UTC")).total_seconds() < self.stale_s
@@ -223,6 +232,7 @@ class LiveRunner:
             held = int((now - pd.Timestamp(open_rows[p.id]["entry_ts"])).total_seconds() * 1e9 // s.tf_ns)
             s.entry_idx = s.n_closed - held
             self._by_pos[p.id] = s
+            self._restore_trail(s, p, now)
             self.notify("info", "adopt", f"adopted open position {p.id} for {s.name}", None, now)
 
     # ------------------------------------------------------------------ bar events
@@ -279,7 +289,8 @@ class LiveRunner:
             if (sig["exit_long"] if s.pos_dir == 1 else sig["exit_short"]) or sig["time_exit_flag"] or (i - s.entry_idx) >= s.max_bars:
                 self._close(s, "time" if sig["time_exit_flag"] else "signal", ts)
         want = 1 if (sig["sig_long"] and not sig["sig_short"]) else -1 if (sig["sig_short"] and not sig["sig_long"]) else 0
-        s.pending = {"dir": want, "lots": sig["lots"], "stop_dist": sig["stop_dist"], "target_dist": sig["target_dist"], "bar_ns": a[0]} if want != 0 and sig["lots"] > 0 else None
+        s.pending = {"dir": want, "lots": sig["lots"], "stop_dist": sig["stop_dist"], "target_dist": sig["target_dist"], "bar_ns": a[0],
+                     "trail_dist": float(sig.get("trail_dist") or 0.0), "trail_act": float(sig.get("trail_act") or 0.0)} if want != 0 and sig["lots"] > 0 else None
 
     # ------------------------------------------------------------------ entries
     def _mode(self, s: Slot) -> str:
@@ -324,9 +335,10 @@ class LiveRunner:
             self.notify("warning", "approval_needed", f"#{iid} {s.name} {'BUY' if d == 1 else 'SELL'} {dec.lots:.2f} lots @ ~{ref_px:.2f} awaits approval (expires {ts + self.approval_ttl})", None, ts)
             return
         iid = self.ledger.add_intent(lots=dec.lots, status="accepted", reasons=dec.reasons, **base)
-        self._execute(s, iid, d, dec.lots, intent["stop_dist"], intent["target_dist"], ts)
+        self._execute(s, iid, d, dec.lots, intent["stop_dist"], intent["target_dist"], ts, trail=(intent.get("trail_dist", 0.0), intent.get("trail_act", 0.0)))
 
-    def _execute(self, s: Slot, intent_id: int, d: int, lots: float, stop_dist: float, target_dist: float, ts: pd.Timestamp, by: str = "system") -> None:
+    def _execute(self, s: Slot, intent_id: int, d: int, lots: float, stop_dist: float, target_dist: float, ts: pd.Timestamp, by: str = "system",
+                 trail: tuple[float, float] = (0.0, 0.0)) -> None:
         try:
             f = self.broker.open_position(s.name, d, lots, stop_dist, target_dist)
         except Exception as e:  # noqa: BLE001
@@ -337,6 +349,14 @@ class LiveRunner:
         self._by_pos[f.position_id] = s
         self.ledger.open_trade(f.position_id, s.name, f.symbol, self.stage, d, f.lots, f.ts, f.price, f.stop_px, f.tgt_px, intent_id)
         self.ledger.set_intent(intent_id, "executed", by=by, ts=ts, position_id=f.position_id)
+        td, ta = trail
+        if td and math.isfinite(td) and td > 0 and f.stop_px is not None:
+            ts_ns = ts.as_unit("ns").value
+            s.trail = {"d": float(td), "a": float(ta or 0.0), "entry": float(f.price), "stop0": float(f.stop_px), "stop": float(f.stop_px), "ext": float(f.price),
+                       "trailed": False, "from_ns": int(ts_ns - ts_ns % self.exec_ns), "dirty": False}
+            self._save_trail(s)
+        else:
+            s.trail = None
 
     def _process_approvals(self, ts: pd.Timestamp) -> None:
         for iid, (s, intent) in list(self._pending.items()):
@@ -366,7 +386,69 @@ class LiveRunner:
             if not dec.allowed:
                 self.ledger.set_intent(iid, "blocked", by=by, ts=ts, reasons="; ".join(dec.reasons))
                 continue
-            self._execute(s, iid, intent["dir"], dec.lots, intent["stop_dist"], intent["target_dist"], ts, by=by)
+            self._execute(s, iid, intent["dir"], dec.lots, intent["stop_dist"], intent["target_dist"], ts, by=by,
+                          trail=(intent.get("trail_dist", 0.0), intent.get("trail_act", 0.0)))
+
+    # ------------------------------------------------------------------ trailing stops
+    def _save_trail(self, s: Slot) -> None:
+        if s.trail is not None and s.position_id is not None:
+            self.ledger.set(f"trail:{s.position_id}", {k: v for k, v in s.trail.items() if k != "dirty"}, commit=not self.broker.simulated)
+
+    def _ratchet(self, ts_ns: int, h: float, l: float, spread: float) -> None:
+        """One closed execution bar: update each trailing position's best price and, once it is far enough in profit, its stop. Only bars at or after the
+        fill count; the new stop applies from the next bar (the order of high and low inside a bar is unknowable)."""
+        for s in self.slots:
+            t = s.trail
+            if t is None or s.position_id is None or ts_ns < t["from_ns"]:
+                continue
+            if s.pos_dir == 1:
+                if h > t["ext"]:
+                    t["ext"], t["save"] = h, True
+                if t["ext"] - t["entry"] >= t["a"] and t["ext"] - t["d"] > t["stop"]:
+                    t["stop"], t["trailed"], t["dirty"], t["save"] = t["ext"] - t["d"], True, True, True
+            else:
+                ask_low = l + spread
+                if ask_low < t["ext"]:
+                    t["ext"], t["save"] = ask_low, True
+                if t["entry"] - t["ext"] >= t["a"] and t["ext"] + t["d"] < t["stop"]:
+                    t["stop"], t["trailed"], t["dirty"], t["save"] = t["ext"] + t["d"], True, True, True
+
+    def _push_stops(self, ts: pd.Timestamp) -> None:
+        """Send moved stops to the venue. A rejected move keeps the old stop (and is retried on the next bar)."""
+        for s in self.slots:
+            t = s.trail
+            if t is None or s.position_id is None:
+                continue
+            if t.get("dirty"):
+                if not self.broker.simulated:
+                    try:
+                        q = self.broker.quote()
+                    except Exception as e:  # noqa: BLE001
+                        self.notify("error", "trail", f"{s.name}: cannot read the quote to move the stop: {e}", None, ts)
+                        continue
+                    if (s.pos_dir == 1 and t["stop"] >= q.bid) or (s.pos_dir == -1 and t["stop"] <= q.ask):
+                        # the market is already beyond the trailed stop, and a venue will not accept a stop there: this IS the exit
+                        self.notify("info", "trail", f"{s.name}: price is already through the trailed stop {t['stop']:.2f}; closing at market", None, ts)
+                        t["trailed"] = True
+                        self._close(s, "trail", ts)
+                        continue
+                try:
+                    self.broker.modify_position(s.position_id, stop_px=t["stop"])
+                    t["dirty"] = False
+                except Exception as e:  # noqa: BLE001
+                    self.notify("error", "trail", f"{s.name}: the venue did not accept the trailing stop {t['stop']:.2f} (the previous stop stays in force): {e}", None, ts)
+            if t.pop("save", False):
+                self._save_trail(s)
+
+    def _restore_trail(self, s: Slot, p, now: pd.Timestamp) -> None:
+        """After a restart: take the trailing state back from the ledger; without it the trail stops (the venue keeps the stop it has) and that is said out loud."""
+        saved = self.ledger.get(f"trail:{p.id}")
+        if saved:
+            s.trail = dict(saved, dirty=False)
+        elif s.spec.exit.trail:
+            s.trail = None
+            self.notify("critical", "trail", f"{s.name}: no saved trailing state for adopted position {p.id}; trailing is OFF for it and the venue keeps its current stop "
+                        f"{p.stop_px}. Move or close it by hand if that is not what you want.", None, now)
 
     # ------------------------------------------------------------------ exits
     def _close(self, s: Slot, reason: str, ts: pd.Timestamp) -> None:
@@ -384,10 +466,12 @@ class LiveRunner:
 
     def _on_exit(self, f: Fill) -> None:
         s = self._by_pos.pop(f.position_id, None)
-        row = self.ledger.close_trade(f.position_id, f.ts, f.price, f.reason, f.pnl, f.commission, f.swap)
+        reason = "trail" if (s is not None and s.trail is not None and s.trail["trailed"] and f.reason == "stop") else f.reason     # a stop that was trailed is a trail exit
+        row = self.ledger.close_trade(f.position_id, f.ts, f.price, reason, f.pnl, f.commission, f.swap)
+        self.ledger.set(f"trail:{f.position_id}", None, commit=not self.broker.simulated)
         if s is None:
             return
-        s.position_id, s.pos_dir = None, 0
+        s.position_id, s.pos_dir, s.trail = None, 0, None
         self.risk.on_trade_closed(f.ts, f.pnl)
         if row and row.get("r_multiple") is not None:
             s.live_r.append(row["r_multiple"])
